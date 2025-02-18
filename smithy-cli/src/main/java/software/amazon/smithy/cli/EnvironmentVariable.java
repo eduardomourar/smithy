@@ -1,18 +1,7 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.cli;
 
 import java.util.logging.Logger;
@@ -59,8 +48,8 @@ public enum EnvironmentVariable {
                 // versions of the Gradle plugin can use newer versions of Smithy. This means that even if Gradle is
                 // updated to disable dependency resolution, previous versions could inadvertently use it.
                 LOGGER.info("Detected that the Smithy CLI is running in Gradle, so dependency resolution is disabled. "
-                            + "This can be overridden by setting SMITHY_DEPENDENCY_MODE environment variable to "
-                            + "'standard'.");
+                        + "This can be overridden by setting SMITHY_DEPENDENCY_MODE environment variable to "
+                        + "'standard'.");
                 return "ignore";
             } else {
                 return "standard";
@@ -89,7 +78,38 @@ public enum EnvironmentVariable {
      *     <li>If not set and the operating system is detected as Windows, colors are disabled.</li>
      * </ul>
      */
-    TERM;
+    TERM,
+
+    /**
+     * Used to determine a proxy host to use for Maven dependency resolution.
+     *
+     * <p>Set the host, protocol, and port information with a valid url.
+     * <pre>
+     * {@code export SMITHY_PROXY_HOST=protocol://host:port}
+     * </pre>
+     * <strong>NOTE:</strong> this setting will be used for all repositories
+     * defined in the smithy-build maven configuration unless a repo-specific
+     * configuration is provided.
+     *
+     */
+    SMITHY_PROXY_HOST,
+
+    /**
+     * Used to determine a proxy credentials to use for Maven dependency resolution through
+     * a proxy.
+     *
+     * <p>Use this setting in conjunction with the {@link #SMITHY_PROXY_HOST} variable to configure
+     * proxy settings for dependency resolution.
+     *
+     * <p>Set both the username and password information as a ":" separated string.
+     * <pre>
+     * {@code export SMITHY_PROXY_CREDENTIALS=user:pass}
+     * </pre>
+     * <strong>NOTE:</strong> this setting will be used for all repositories
+     * defined in the smithy-build maven configuration unless a repo-specific
+     * configuration is provided.
+     */
+    SMITHY_PROXY_CREDENTIALS;
 
     private static final Logger LOGGER = Logger.getLogger(EnvironmentVariable.class.getName());
 

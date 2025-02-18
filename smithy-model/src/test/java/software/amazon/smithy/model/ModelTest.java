@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -30,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -38,13 +28,10 @@ import software.amazon.smithy.model.knowledge.KnowledgeIndex;
 import software.amazon.smithy.model.knowledge.TopDownIndex;
 import software.amazon.smithy.model.node.ExpectationNotMetException;
 import software.amazon.smithy.model.node.Node;
-import software.amazon.smithy.model.shapes.EnumShape;
-import software.amazon.smithy.model.shapes.IntegerShape;
-import software.amazon.smithy.model.shapes.ListShape;
-import software.amazon.smithy.model.shapes.Shape;
-import software.amazon.smithy.model.shapes.ShapeId;
-import software.amazon.smithy.model.shapes.StringShape;
-import software.amazon.smithy.model.shapes.TimestampShape;
+import software.amazon.smithy.model.node.ObjectNode;
+import software.amazon.smithy.model.node.StringNode;
+import software.amazon.smithy.model.shapes.*;
+import software.amazon.smithy.model.traits.ExamplesTrait;
 import software.amazon.smithy.model.traits.TraitDefinition;
 import software.amazon.smithy.model.traits.synthetic.OriginalShapeIdTrait;
 
@@ -55,9 +42,9 @@ public class ModelTest {
         Model model = Model.builder()
                 .putMetadataProperty("name.name", Node.objectNode())
                 .addShape(StringShape.builder()
-                                  .id("smithy.example#String")
-                                  .addTrait(TraitDefinition.builder().build())
-                                  .build())
+                        .id("smithy.example#String")
+                        .addTrait(TraitDefinition.builder().build())
+                        .build())
                 .build();
 
         assertTrue(model.getMetadataProperty("name.name").isPresent());
@@ -77,6 +64,36 @@ public class ModelTest {
         assertThat(modelA, equalTo(modelA));
         assertThat(modelA, not(equalTo(modelB)));
         assertThat(modelA, not(equalTo(null)));
+    }
+
+    @Test
+    public void modelEqualityExamples() {
+        StructureShape opInput = StructureShape.builder()
+                .id(ShapeId.fromParts("foo", "FooInput"))
+                .addMember("test", ShapeId.from("smithy.api#String"))
+                .build();
+        Supplier<OperationShape> op = () -> {
+            ExamplesTrait.Example example = ExamplesTrait.Example.builder()
+                    .title("anything")
+                    .input(ObjectNode.builder().withMember("test", StringNode.from("something")).build())
+                    .build();
+            ExamplesTrait examples = ExamplesTrait.builder().addExample(example).build();
+            return OperationShape.builder()
+                    .id(ShapeId.fromParts("foo", "Foo"))
+                    .input(opInput)
+                    .addTrait(examples)
+                    .build();
+        };
+
+        Model modelA = Model.builder()
+                .addShape(op.get())
+                .build();
+        Model modelB = Model.builder()
+                .addShape(op.get())
+                .build();
+
+        assertThat(modelA, equalTo(modelA));
+        assertThat(modelA, equalTo(modelB));
     }
 
     @Test

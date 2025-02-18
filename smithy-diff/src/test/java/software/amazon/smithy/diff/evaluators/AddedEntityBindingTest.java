@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.diff.evaluators;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -41,7 +30,7 @@ public class AddedEntityBindingTest {
         Model modelB = Model.assembler().addShapes(service1, o).assemble().unwrap();
         List<ValidationEvent> events = ModelDiff.compare(modelA, modelB);
 
-        assertThat(TestHelper.findEvents(events, "AddedOperationBinding").size(), equalTo(1));
+        assertThat(TestHelper.findEvents(events, "AddedOperationBinding.ToService.Operation").size(), equalTo(1));
     }
 
     @Test
@@ -53,7 +42,7 @@ public class AddedEntityBindingTest {
         Model modelB = Model.assembler().addShapes(r1, o).assemble().unwrap();
         List<ValidationEvent> events = ModelDiff.compare(modelA, modelB);
 
-        assertThat(TestHelper.findEvents(events, "AddedOperationBinding").size(), equalTo(1));
+        assertThat(TestHelper.findEvents(events, "AddedOperationBinding.ToResource.Operation").size(), equalTo(1));
     }
 
     @Test
@@ -69,7 +58,7 @@ public class AddedEntityBindingTest {
         Model modelB = Model.assembler().addShapes(service1, r).assemble().unwrap();
         List<ValidationEvent> events = ModelDiff.compare(modelA, modelB);
 
-        assertThat(TestHelper.findEvents(events, "AddedResourceBinding").size(), equalTo(1));
+        assertThat(TestHelper.findEvents(events, "AddedResourceBinding.ToService.Resource").size(), equalTo(1));
     }
 
     @Test
@@ -81,6 +70,6 @@ public class AddedEntityBindingTest {
         Model modelB = Model.assembler().addShapes(p1, child).assemble().unwrap();
         List<ValidationEvent> events = ModelDiff.compare(modelA, modelB);
 
-        assertThat(TestHelper.findEvents(events, "AddedResourceBinding").size(), equalTo(1));
+        assertThat(TestHelper.findEvents(events, "AddedResourceBinding.ToResource.C").size(), equalTo(1));
     }
 }

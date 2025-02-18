@@ -1,34 +1,27 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *   http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.shapes;
 
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import software.amazon.smithy.model.SourceException;
+import software.amazon.smithy.model.SourceLocation;
 import software.amazon.smithy.model.traits.DeprecatedTrait;
 import software.amazon.smithy.model.traits.DocumentationTrait;
 import software.amazon.smithy.model.traits.EnumDefinition;
 import software.amazon.smithy.model.traits.EnumTrait;
 import software.amazon.smithy.model.traits.EnumValueTrait;
+import software.amazon.smithy.model.traits.InternalTrait;
+import software.amazon.smithy.model.traits.StringListTrait;
 import software.amazon.smithy.model.traits.TagsTrait;
 import software.amazon.smithy.model.traits.Trait;
 import software.amazon.smithy.model.traits.UnitTypeTrait;
@@ -46,7 +39,19 @@ public final class EnumShape extends StringShape {
     private EnumShape(Builder builder) {
         super(builder);
         members = NamedMemberUtils.computeMixinMembers(
-                builder.getMixins(), builder.members, getId(), getSourceLocation());
+                builder.getMixins(),
+                builder.members,
+                getId(),
+                getSourceLocation());
+        validateMemberShapeIds();
+        if (members.size() < 1) {
+            throw new SourceException("enum shapes must have at least one member", getSourceLocation());
+        }
+    }
+
+    private EnumShape(Builder builder, Map<String, MemberShape> members) {
+        super(builder);
+        this.members = members;
         validateMemberShapeIds();
         if (members.size() < 1) {
             throw new SourceException("enum shapes must have at least one member", getSourceLocation());
@@ -167,8 +172,7 @@ public final class EnumShape extends StringShape {
         if (!shape.hasTrait(EnumTrait.class)) {
             LOGGER.info(String.format(
                     "Unable to convert string shape `%s` to enum shape because it doesn't have an enum trait.",
-                    shape.getId()
-            ));
+                    shape.getId()));
             return false;
         }
 
@@ -177,8 +181,7 @@ public final class EnumShape extends StringShape {
             LOGGER.info(String.format(
                     "Unable to convert string shape `%s` to enum shape because it doesn't define names. The "
                             + "`synthesizeNames` option may be able to synthesize the names for you.",
-                    shape.getId()
-            ));
+                    shape.getId()));
             return false;
         }
 
@@ -187,8 +190,8 @@ public final class EnumShape extends StringShape {
                 LOGGER.info(String.format(
                         "Unable to convert string shape `%s` to enum shape because it has at least one value which "
                                 + "cannot be safely synthesized into a name: %s",
-                        shape.getId(), definition.getValue()
-                ));
+                        shape.getId(),
+                        definition.getValue()));
                 return false;
             }
         }
@@ -198,6 +201,12 @@ public final class EnumShape extends StringShape {
 
     /**
      * Converts an enum definition to the equivalent enum member shape.
+     *
+     * <p>If an enum definition is marked as deprecated, the DeprecatedTrait
+     * is applied to the converted enum member shape.
+     *
+     * <p>If an enum definition has an "internal" tag, the InternalTrait is
+     * applied to the converted enum member shape.
      *
      * @param parentId The {@link ShapeId} of the enum shape.
      * @param synthesizeName Whether to synthesize a name if possible.
@@ -233,6 +242,9 @@ public final class EnumShape extends StringShape {
             if (definition.isDeprecated()) {
                 builder.addTrait(DeprecatedTrait.builder().build());
             }
+            if (definition.hasTag("internal")) {
+                builder.addTrait(new InternalTrait());
+            }
 
             return Optional.of(builder.build());
         } catch (ShapeIdSyntaxException e) {
@@ -266,8 +278,16 @@ public final class EnumShape extends StringShape {
                 .orElseThrow(() -> new IllegalStateException("Enum definitions can only be made for string enums."));
         builder.value(traitValue);
         member.getTrait(DocumentationTrait.class).ifPresent(docTrait -> builder.documentation(docTrait.getValue()));
-        member.getTrait(TagsTrait.class).ifPresent(tagsTrait -> builder.tags(tagsTrait.getValues()));
         member.getTrait(DeprecatedTrait.class).ifPresent(deprecatedTrait -> builder.deprecated(true));
+
+        List<String> tags = member.getTrait(TagsTrait.class)
+                .map(StringListTrait::getValues)
+                .orElse(Collections.emptyList());
+
+        builder.tags(tags);
+        if (member.hasTrait(InternalTrait.class) && !tags.contains("internal")) {
+            builder.addTag("internal");
+        }
         return builder.build();
     }
 
@@ -281,8 +301,11 @@ public final class EnumShape extends StringShape {
 
         @Override
         public EnumShape build() {
-            addSyntheticEnumTrait();
-            return new EnumShape(this);
+            // Collect members from enum and mixins
+            Map<String, MemberShape> aggregatedMembers =
+                    NamedMemberUtils.computeMixinMembers(getMixins(), members, getId(), getSourceLocation());
+            addSyntheticEnumTrait(aggregatedMembers.values());
+            return new EnumShape(this, aggregatedMembers);
         }
 
         /**
@@ -292,10 +315,10 @@ public final class EnumShape extends StringShape {
          * the enum trait, without having to manually add the trait or risk that it
          * gets serialized.
          */
-        private void addSyntheticEnumTrait() {
+        private void addSyntheticEnumTrait(Collection<MemberShape> memberShapes) {
             SyntheticEnumTrait.Builder builder = SyntheticEnumTrait.builder();
             builder.sourceLocation(getSourceLocation());
-            for (MemberShape member : members.get().values()) {
+            for (MemberShape member : memberShapes) {
                 try {
                     builder.addEnum(EnumShape.enumDefinitionFromMember(member));
                 } catch (IllegalStateException e) {
@@ -350,8 +373,8 @@ public final class EnumShape extends StringShape {
                 } else {
                     throw new IllegalStateException(String.format(
                             "Unable to convert enum trait entry with name: `%s` and value `%s` to an enum member.",
-                            definition.getName().orElse(""), definition.getValue()
-                    ));
+                            definition.getName().orElse(""),
+                            definition.getValue()));
                 }
             }
 
@@ -404,8 +427,8 @@ public final class EnumShape extends StringShape {
         public Builder addMember(MemberShape member) {
             if (!member.getTarget().equals(UnitTypeTrait.UNIT)) {
                 throw new SourceException(String.format(
-                        "Enum members may only target `smithy.api#Unit`, but found `%s`", member.getTarget()
-                ), getSourceLocation());
+                        "Enum members may only target `smithy.api#Unit`, but found `%s`",
+                        member.getTarget()), getSourceLocation());
             }
             if (!member.hasTrait(EnumValueTrait.ID)) {
                 member = member.toBuilder()
@@ -494,6 +517,11 @@ public final class EnumShape extends StringShape {
             }
             members(NamedMemberUtils.flattenMixins(members.get(), getMixins(), getId(), getSourceLocation()));
             return (Builder) super.flattenMixins();
+        }
+
+        @Override
+        public Builder source(SourceLocation source) {
+            return (Builder) super.source(source);
         }
     }
 }

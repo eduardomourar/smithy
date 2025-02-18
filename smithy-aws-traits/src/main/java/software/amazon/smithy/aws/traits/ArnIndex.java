@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.aws.traits;
 
 import static java.util.Collections.unmodifiableMap;
@@ -51,7 +40,7 @@ public final class ArnIndex implements KnowledgeIndex {
             arnServices.put(service.getId(), service.expectTrait(ServiceTrait.class).getArnNamespace());
         }
 
-        // Pre-compute all of the ArnTemplates in a service shape.
+        // Pre-compute all of the ARN templates in a service shape.
         TopDownIndex topDownIndex = TopDownIndex.of(model);
         List<ServiceShape> services = model.shapes(ServiceShape.class)
                 .filter(shape -> shape.hasTrait(ServiceTrait.class))
@@ -84,7 +73,10 @@ public final class ArnIndex implements KnowledgeIndex {
     }
 
     private void compileEffectiveArns(
-            TopDownIndex index, IdentifierBindingIndex bindings, ServiceShape service) {
+            TopDownIndex index,
+            IdentifierBindingIndex bindings,
+            ServiceShape service
+    ) {
         Map<ShapeId, ArnTrait> operationMappings = new HashMap<>();
         effectiveArns.put(service.getId(), operationMappings);
 
@@ -120,16 +112,16 @@ public final class ArnIndex implements KnowledgeIndex {
      */
     public String getServiceArnNamespace(ToShapeId serviceId) {
         return arnServices.containsKey(serviceId.toShapeId())
-               ? arnServices.get(serviceId.toShapeId())
-               : serviceId.toShapeId().getName().toLowerCase(Locale.US);
+                ? arnServices.get(serviceId.toShapeId())
+                : serviceId.toShapeId().getName().toLowerCase(Locale.US);
     }
 
     /**
      * Gets all of the mappings of resources within a service to its
-     * arnTemplate trait.
+     * arn trait.
      *
      * @param service Service to retrieve.
-     * @return Returns the mapping of resource ID to arnTemplate traits.
+     * @return Returns the mapping of resource ID to arn traits.
      */
     public Map<ShapeId, ArnTrait> getServiceResourceArns(ToShapeId service) {
         return templates.getOrDefault(service.toShapeId(), Collections.emptyMap());
@@ -160,10 +152,10 @@ public final class ArnIndex implements KnowledgeIndex {
      * <p>For relative ARNs, the returned template string is in the format of
      * <code>arn:{AWS::Partition}:service:{AWS::Region}:{AWS::AccountId}:resource</code>
      * where "service" is the resolved ARN service name of the service and
-     * "resource" is the resource part of the arnTemplate template.
-     * "{AWS::Region}" is added to the template if the arnTemplate "noRegion"
+     * "resource" is the resource part of the arn template.
+     * "{AWS::Region}" is added to the template if the arn "noRegion"
      * value is not set to true. "{AWS::AccountId}" is added to the template if
-     * the arnTemplate "noAccount" value is not set to true.
+     * the arn "noAccount" value is not set to true.
      *
      * <p>For example, if both "noAccount" and "noRegion" are set to true,
      * the resolved ARN template might look like "arn:{AWS::Partition}:service:::resource".

@@ -1,27 +1,20 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.loader;
 
 import static java.lang.String.format;
+import static software.amazon.smithy.model.validation.Severity.ERROR;
+import static software.amazon.smithy.model.validation.Validator.MODEL_ERROR;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Logger;
 import software.amazon.smithy.model.SourceException;
 import software.amazon.smithy.model.SourceLocation;
@@ -38,12 +31,14 @@ import software.amazon.smithy.model.validation.Validator;
 final class LoaderTraitMap {
 
     private static final Logger LOGGER = Logger.getLogger(LoaderTraitMap.class.getName());
+    private static final String UNRESOLVED_TRAIT_SUFFIX = ".UnresolvedTrait";
 
     private final TraitFactory traitFactory;
     private final Map<ShapeId, Map<ShapeId, Node>> traits = new HashMap<>();
     private final List<ValidationEvent> events;
     private final boolean allowUnknownTraits;
     private final Map<ShapeId, Map<ShapeId, Trait>> unclaimed = new HashMap<>();
+    private final Set<ShapeId> claimed = new HashSet<>();
 
     LoaderTraitMap(TraitFactory traitFactory, List<ValidationEvent> events, boolean allowUnknownTraits) {
         this.traitFactory = traitFactory;
@@ -77,10 +72,19 @@ final class LoaderTraitMap {
                     for (LoadOperation.DefineShape shape : rootShapes) {
                         if (shape.hasMember(memberName)) {
                             foundMember = true;
-                            shape.memberBuilders().get(memberName).getAllTraits();
                             applyTraitsToShape(shape.memberBuilders().get(memberName), created);
+                        } else {
+                            // If we didn't have the member and the member is from a mixin,
+                            // we need to update ApplyMixin shape modifiers to apply the trait
+                            // in case we have the target's container already in the shapeMap.
+                            for (ShapeModifier modifier : shape.modifiers()) {
+                                if (modifier instanceof ApplyMixin) {
+                                    ((ApplyMixin) modifier).putPotentiallyIntroducedTrait(target, created);
+                                }
+                            }
                         }
                     }
+
                     // If the member wasn't found, then it might be a mixin member that is synthesized later.
                     if (!foundMember) {
                         unclaimed.computeIfAbsent(target.withMember(memberName), id -> new LinkedHashMap<>())
@@ -106,20 +110,36 @@ final class LoaderTraitMap {
             String message = format("Error creating trait `%s`: ", Trait.getIdiomaticTraitName(traitId));
             events.add(ValidationEvent.fromSourceException(e, message, target));
             return null;
+        } catch (RuntimeException e) {
+            events.add(ValidationEvent.builder()
+                    .id(MODEL_ERROR)
+                    .severity(ERROR)
+                    .shapeId(target)
+                    .sourceLocation(traitValue)
+                    .message(format("Error creating trait `%s`: %s",
+                            Trait.getIdiomaticTraitName(traitId),
+                            e.getMessage()))
+                    .build());
+            return null;
         }
     }
 
-    private void validateTraitIsKnown(ShapeId target, ShapeId traitId, Trait trait,
-            SourceLocation sourceLocation, LoaderShapeMap shapeMap) {
+    private void validateTraitIsKnown(
+            ShapeId target,
+            ShapeId traitId,
+            Trait trait,
+            SourceLocation sourceLocation,
+            LoaderShapeMap shapeMap
+    ) {
         if (!shapeMap.isRootShapeDefined(traitId) && (trait == null || !trait.isSynthetic())) {
             Severity severity = allowUnknownTraits ? Severity.WARNING : Severity.ERROR;
             events.add(ValidationEvent.builder()
-                    .id(Validator.MODEL_ERROR)
+                    .id(Validator.MODEL_ERROR + UNRESOLVED_TRAIT_SUFFIX)
                     .severity(severity)
                     .sourceLocation(sourceLocation)
                     .shapeId(target)
                     .message(String.format("Unable to resolve trait `%s`. If this is a custom trait, then it must be "
-                                           + "defined before it can be used in a model.", traitId))
+                            + "defined before it can be used in a model.", traitId))
                     .build());
         }
     }
@@ -133,19 +153,27 @@ final class LoaderTraitMap {
     // Traits can be applied to synthesized members inherited from mixins. Applying these traits is deferred until
     // the point in which mixin members are synthesized into shapes.
     Map<ShapeId, Trait> claimTraitsForShape(ShapeId id) {
-        return unclaimed.containsKey(id) ? unclaimed.remove(id) : Collections.emptyMap();
+        if (!unclaimed.containsKey(id)) {
+            return Collections.emptyMap();
+        }
+        claimed.add(id);
+        return unclaimed.get(id);
     }
 
     // Emit events if any traits were applied to shapes that weren't found in the model.
     void emitUnclaimedTraits() {
         for (Map.Entry<ShapeId, Map<ShapeId, Trait>> entry : unclaimed.entrySet()) {
+            if (claimed.contains(entry.getKey())) {
+                continue;
+            }
             for (Map.Entry<ShapeId, Trait> traitEntry : entry.getValue().entrySet()) {
                 events.add(ValidationEvent.builder()
                         .id(Validator.MODEL_ERROR)
                         .severity(Severity.ERROR)
                         .sourceLocation(traitEntry.getValue())
                         .message(String.format("Trait `%s` applied to unknown shape `%s`",
-                                               Trait.getIdiomaticTraitName(traitEntry.getKey()), entry.getKey()))
+                                Trait.getIdiomaticTraitName(traitEntry.getKey()),
+                                entry.getKey()))
                         .build());
             }
         }
@@ -174,7 +202,9 @@ final class LoaderTraitMap {
 
     private boolean validateTraitVersion(LoadOperation.ApplyTrait operation) {
         ValidationEvent event = operation.version.validateVersionedTrait(
-                operation.target, operation.trait, operation.value);
+                operation.target,
+                operation.trait,
+                operation.value);
         if (event != null) {
             events.add(event);
         }
@@ -183,7 +213,7 @@ final class LoaderTraitMap {
 
     private boolean isAppliedToPreludeOutsidePrelude(LoadOperation.ApplyTrait operation) {
         return !operation.namespace.equals(Prelude.NAMESPACE)
-               && operation.target.getNamespace().equals(Prelude.NAMESPACE);
+                && operation.target.getNamespace().equals(Prelude.NAMESPACE);
     }
 
     private Node mergeTraits(ShapeId target, ShapeId traitId, Node previous, Node updated) {
@@ -200,7 +230,8 @@ final class LoaderTraitMap {
             // added to a subsequent ModelAssembler, and then model discovery is
             // performed again using the same classpath.
             LOGGER.finest(() -> String.format("Ignoring duplicate %s trait value on %s at same exact location",
-                                              traitId, target));
+                    traitId,
+                    target));
             return previous;
         }
 
@@ -217,8 +248,11 @@ final class LoaderTraitMap {
                     .sourceLocation(updated)
                     .shapeId(target)
                     .message(String.format("Conflicting `%s` trait found on shape `%s`. The previous trait was "
-                                           + "defined at `%s`, and a conflicting trait was defined at `%s`.",
-                                           traitId, target, previous.getSourceLocation(), updated.getSourceLocation()))
+                            + "defined at `%s`, and a conflicting trait was defined at `%s`.",
+                            traitId,
+                            target,
+                            previous.getSourceLocation(),
+                            updated.getSourceLocation()))
                     .build());
             return previous;
         }

@@ -1,18 +1,7 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.cli;
 
 /**
@@ -43,25 +32,6 @@ public interface Command {
      * @return Returns the short help description.
      */
     String getSummary();
-
-    /**
-     * Gets the long description of the command.
-     *
-     * @param colors Color formatter to use for styling help.
-     * @return Returns the long description.
-     */
-    default String getDocumentation(ColorFormatter colors) {
-        return "";
-    }
-
-    /**
-     * Prints help output.
-     *
-     * @param arguments Arguments that have been parsed so far.
-     * @param colors Color formatter to use.
-     * @param printer Where to write help.
-     */
-    void printHelp(Arguments arguments, ColorFormatter colors, CliPrinter printer);
 
     /**
      * Executes the command using the provided arguments.
@@ -103,6 +73,11 @@ public interface Command {
 
         public ClassLoader classLoader() {
             return classLoader == null ? getClass().getClassLoader() : classLoader;
+        }
+
+        public void flush() {
+            stderr.flush();
+            stdout.flush();
         }
 
         public Env withClassLoader(ClassLoader classLoader) {

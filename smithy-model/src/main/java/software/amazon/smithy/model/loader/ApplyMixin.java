@@ -1,24 +1,16 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *   http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.loader;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import software.amazon.smithy.model.SourceException;
 import software.amazon.smithy.model.shapes.AbstractShapeBuilder;
@@ -36,6 +28,7 @@ import software.amazon.smithy.model.validation.Validator;
 final class ApplyMixin implements ShapeModifier {
     private final ShapeId mixin;
     private List<ValidationEvent> events;
+    private Map<ShapeId, Map<ShapeId, Trait>> potentiallyIntroducedTraits;
 
     ApplyMixin(ShapeId mixin) {
         this.mixin = mixin;
@@ -52,13 +45,12 @@ final class ApplyMixin implements ShapeModifier {
         if (memberBuilder.getTarget() != null) {
             return;
         }
-
         // Members inherited from mixins can have their targets elided, so here we set them
         // to the target defined in the mixin.
         Shape mixinShape = shapeMap.apply(mixin);
         if (mixinShape == null) {
             throw new SourceException("Cannot apply mixin to " + memberBuilder.getId() + ": " + mixin + " not found",
-                                      memberBuilder);
+                    memberBuilder);
         }
 
         String name = memberBuilder.getId().getMember().get();
@@ -75,31 +67,52 @@ final class ApplyMixin implements ShapeModifier {
         Shape mixinShape = shapeMap.apply(mixin);
         if (mixinShape == null) {
             throw new SourceException("Cannot apply mixin to " + builder.getId() + ": " + mixin + " not found",
-                                      builder);
+                    builder);
         }
 
         for (MemberShape member : mixinShape.members()) {
             ShapeId targetId = builder.getId().withMember(member.getMemberName());
-            // Claim traits from the trait map that were applied to synthesized shapes.
-            Map<ShapeId, Trait> introducedTraits = unclaimedTraits.apply(targetId);
-
+            // Claim traits from the trait maps that were applied to synthesized shapes.
+            Map<ShapeId, Trait> introducedTraits = new LinkedHashMap<>(unclaimedTraits.apply(targetId));
+            if (potentiallyIntroducedTraits != null && potentiallyIntroducedTraits.containsKey(targetId)) {
+                introducedTraits.putAll(potentiallyIntroducedTraits.get(targetId));
+            }
+            String memberName = member.getMemberName();
             MemberShape introducedMember = null;
-            if (memberBuilders.containsKey(member.getMemberName())) {
-                MemberShape.Builder original = memberBuilders.get(member.getMemberName());
-                introducedMember = original.addMixin(member).build();
-                if (!introducedMember.getTarget().equals(member.getTarget())) {
-                    mixinMemberConflict(original, member);
+            Optional<MemberShape> previouslyAdded = builder.getMember(memberName);
+            if (previouslyAdded.isPresent()) {
+                // The member was previously introduced, check if it inherits from another mixin to
+                // avoid overwriting it.
+                MemberShape previous = previouslyAdded.get();
+                if (!previous.getMixins().isEmpty()) {
+                    MemberShape.Builder previouslyAddedBuilder = previous.toBuilder();
+                    introducedMember = previouslyAddedBuilder
+                            .addMixin(member)
+                            .build();
+                    if (!previous.getTarget().equals(member.getTarget())) {
+                        mixinMemberConflict(previouslyAddedBuilder, member);
+                    }
                 }
-            } else if (!introducedTraits.isEmpty()) {
-                // Build local member copies before adding mixins if traits
-                // were introduced to inherited mixin members.
-                introducedMember = MemberShape.builder()
-                        .id(targetId)
-                        .target(member.getTarget())
-                        .source(member.getSourceLocation())
-                        .addTraits(introducedTraits.values())
-                        .addMixin(member)
-                        .build();
+            }
+
+            if (introducedMember == null) {
+                if (memberBuilders.containsKey(member.getMemberName())) {
+                    MemberShape.Builder original = memberBuilders.get(member.getMemberName());
+                    introducedMember = original.addMixin(member).build();
+                    if (!introducedMember.getTarget().equals(member.getTarget())) {
+                        mixinMemberConflict(original, member);
+                    }
+                } else if (!introducedTraits.isEmpty()) {
+                    // Build local member copies before adding mixins if traits
+                    // were introduced to inherited mixin members.
+                    introducedMember = MemberShape.builder()
+                            .id(targetId)
+                            .target(member.getTarget())
+                            .source(member.getSourceLocation())
+                            .addTraits(introducedTraits.values())
+                            .addMixin(member)
+                            .build();
+                }
             }
 
             if (introducedMember != null) {
@@ -119,12 +132,22 @@ final class ApplyMixin implements ShapeModifier {
                 .id(Validator.MODEL_ERROR)
                 .shapeId(conflict.getId())
                 .sourceLocation(conflict.getSourceLocation())
-                .message("Member conflicts with an inherited mixin member: " + other.getId())
+                .message("Member conflicts with an inherited mixin member: `" + other.getId() + "`")
                 .build());
     }
 
     @Override
     public List<ValidationEvent> getEvents() {
         return events == null ? Collections.emptyList() : events;
+    }
+
+    void putPotentiallyIntroducedTrait(ShapeId target, Trait trait) {
+        if (potentiallyIntroducedTraits == null) {
+            potentiallyIntroducedTraits = new HashMap<>();
+        }
+
+        Map<ShapeId, Trait> shapeUnclaimedTraits = potentiallyIntroducedTraits.computeIfAbsent(target,
+                id -> new LinkedHashMap<>());
+        shapeUnclaimedTraits.put(trait.toShapeId(), trait);
     }
 }

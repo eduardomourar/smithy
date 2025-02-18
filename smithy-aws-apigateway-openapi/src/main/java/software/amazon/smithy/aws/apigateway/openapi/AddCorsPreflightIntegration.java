@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.aws.apigateway.openapi;
 
 import java.util.ArrayList;
@@ -31,6 +20,7 @@ import software.amazon.smithy.aws.apigateway.traits.MockIntegrationTrait;
 import software.amazon.smithy.jsonschema.Schema;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.knowledge.TopDownIndex;
+import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.node.ObjectNode;
 import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.traits.CorsTrait;
@@ -45,6 +35,7 @@ import software.amazon.smithy.openapi.model.Ref;
 import software.amazon.smithy.openapi.model.ResponseObject;
 import software.amazon.smithy.utils.CaseUtils;
 import software.amazon.smithy.utils.ListUtils;
+import software.amazon.smithy.utils.SetUtils;
 
 /**
  * Adds CORS-preflight OPTIONS requests using mock API Gateway integrations.
@@ -70,6 +61,7 @@ final class AddCorsPreflightIntegration implements ApiGatewayMapper {
     private static final Logger LOGGER = Logger.getLogger(AddCorsPreflightIntegration.class.getName());
     private static final String API_GATEWAY_DEFAULT_ACCEPT_VALUE = "application/json";
     private static final String INTEGRATION_EXTENSION = "x-amazon-apigateway-integration";
+    private static final String REQUEST_TEMPLATES_KEY = "requestTemplates";
     private static final String PREFLIGHT_SUCCESS = "{\"statusCode\":200}";
 
     @Override
@@ -79,13 +71,18 @@ final class AddCorsPreflightIntegration implements ApiGatewayMapper {
 
     @Override
     public PathItem updatePathItem(Context<? extends Trait> context, String path, PathItem pathItem) {
-        return context.getService().getTrait(CorsTrait.class)
+        return context.getService()
+                .getTrait(CorsTrait.class)
                 .map(corsTrait -> addPreflightIntegration(context, path, pathItem, corsTrait))
                 .orElse(pathItem);
     }
 
     private static PathItem addPreflightIntegration(
-            Context<? extends Trait> context, String path, PathItem pathItem, CorsTrait corsTrait) {
+            Context<? extends Trait> context,
+            String path,
+            PathItem pathItem,
+            CorsTrait corsTrait
+    ) {
         // Filter out any path for which an OPTIONS handler has already been defined
         if (pathItem.getOptions().isPresent()) {
             LOGGER.fine(() -> path + " already defines an OPTIONS request, so no need to generate CORS-preflight");
@@ -95,12 +92,16 @@ final class AddCorsPreflightIntegration implements ApiGatewayMapper {
         LOGGER.fine(() -> "Adding CORS-preflight OPTIONS request and API Gateway integration for " + path);
         Map<CorsHeader, String> headers = deduceCorsHeaders(context, path, pathItem, corsTrait);
         return pathItem.toBuilder()
-                .options(createPreflightOperation(path, pathItem, headers))
+                .options(createPreflightOperation(context, path, pathItem, headers))
                 .build();
     }
 
     private static <T extends Trait> Map<CorsHeader, String> deduceCorsHeaders(
-            Context<T> context, String path, PathItem pathItem, CorsTrait corsTrait) {
+            Context<T> context,
+            String path,
+            PathItem pathItem,
+            CorsTrait corsTrait
+    ) {
         Map<CorsHeader, String> corsHeaders = new HashMap<>();
         corsHeaders.put(CorsHeader.MAX_AGE, String.valueOf(corsTrait.getMaxAge()));
         corsHeaders.put(CorsHeader.ALLOW_ORIGIN, corsTrait.getOrigin());
@@ -118,7 +119,8 @@ final class AddCorsPreflightIntegration implements ApiGatewayMapper {
         headerNames.addAll(corsTrait.getAdditionalAllowedHeaders());
 
         // Sets additional allowed headers from the API Gateway config.
-        Set<String> additionalAllowedHeaders = context.getConfig().getExtensions(ApiGatewayConfig.class)
+        Set<String> additionalAllowedHeaders = context.getConfig()
+                .getExtensions(ApiGatewayConfig.class)
                 .getAdditionalAllowedCorsHeadersSet();
         headerNames.addAll(additionalAllowedHeaders);
         headerNames.addAll(findAllHeaders(path, pathItem));
@@ -131,7 +133,8 @@ final class AddCorsPreflightIntegration implements ApiGatewayMapper {
         // Add protocol headers.
         Model model = context.getModel();
         TopDownIndex topDownIndex = TopDownIndex.of(model);
-        Map<String, OperationShape> operations = topDownIndex.getContainedOperations(context.getService()).stream()
+        Map<String, OperationShape> operations = topDownIndex.getContainedOperations(context.getService())
+                .stream()
                 .collect(Collectors.toMap(o -> o.getId().getName(), o -> o));
         for (OperationObject operationObject : pathItem.getOperations().values()) {
             if (operationObject.getOperationId().isPresent()) {
@@ -141,7 +144,10 @@ final class AddCorsPreflightIntegration implements ApiGatewayMapper {
         }
 
         LOGGER.fine(() -> String.format(
-                "Adding the following %s headers to `%s`: %s", CorsHeader.ALLOW_HEADERS, path, headerNames));
+                "Adding the following %s headers to `%s`: %s",
+                CorsHeader.ALLOW_HEADERS,
+                path,
+                headerNames));
         corsHeaders.put(CorsHeader.ALLOW_HEADERS, String.join(",", headerNames));
 
         return corsHeaders;
@@ -157,11 +163,14 @@ final class AddCorsPreflightIntegration implements ApiGatewayMapper {
 
     private static Collection<String> findAllHeaders(String path, PathItem pathItem) {
         // Get all "in" = "header" parameters and gather up their "name" properties.
-        return pathItem.getOperations().values().stream()
+        return pathItem.getOperations()
+                .values()
+                .stream()
                 .flatMap(operationObject -> operationObject.getParameters().stream())
                 .filter(parameter -> parameter.getIn().filter(in -> in.equals("header")).isPresent())
-                .map(parameter -> parameter.getName().orElseThrow(() -> new OpenApiException(
-                        "OpenAPI header parameter is missing a name in " + path)))
+                .map(parameter -> parameter.getName()
+                        .orElseThrow(() -> new OpenApiException(
+                                "OpenAPI header parameter is missing a name in " + path)))
                 .collect(Collectors.toList());
     }
 
@@ -170,7 +179,11 @@ final class AddCorsPreflightIntegration implements ApiGatewayMapper {
     }
 
     private static OperationObject createPreflightOperation(
-            String path, PathItem pathItem, Map<CorsHeader, String> headers) {
+            Context<? extends Trait> context,
+            String path,
+            PathItem pathItem,
+            Map<CorsHeader, String> headers
+    ) {
         return OperationObject.builder()
                 .tags(ListUtils.of("CORS"))
                 .security(Collections.emptyList())
@@ -178,7 +191,7 @@ final class AddCorsPreflightIntegration implements ApiGatewayMapper {
                 .operationId(createOperationId(path))
                 .putResponse("200", createPreflightResponse(headers))
                 .parameters(findPathParameters(pathItem))
-                .putExtension(INTEGRATION_EXTENSION, createPreflightIntegration(headers, pathItem))
+                .putExtension(INTEGRATION_EXTENSION, createPreflightIntegration(context, headers, pathItem))
                 .build();
     }
 
@@ -214,7 +227,11 @@ final class AddCorsPreflightIntegration implements ApiGatewayMapper {
         return builder.build();
     }
 
-    private static ObjectNode createPreflightIntegration(Map<CorsHeader, String> headers, PathItem pathItem) {
+    private static ObjectNode createPreflightIntegration(
+            Context<? extends Trait> context,
+            Map<CorsHeader, String> headers,
+            PathItem pathItem
+    ) {
         IntegrationResponse.Builder responseBuilder = IntegrationResponse.builder().statusCode("200");
 
         // Add each CORS header to the mock integration response.
@@ -222,12 +239,33 @@ final class AddCorsPreflightIntegration implements ApiGatewayMapper {
             responseBuilder.putResponseParameter("method.response.header." + e.getKey(), "'" + e.getValue() + "'");
         }
 
+        boolean isPreflightSynced = Boolean.TRUE.equals(context.getConfig().getSyncCorsPreflightIntegration());
         MockIntegrationTrait.Builder integration = MockIntegrationTrait.builder()
                 // See https://forums.aws.amazon.com/thread.jspa?threadID=256140
                 .contentHandling("CONVERT_TO_TEXT")
-                .passThroughBehavior("when_no_match")
+                // Passthrough behavior "never" will fail the request with unsupported content type more appropriately.
+                // https://docs.aws.amazon.com/apigateway/latest/developerguide/integration-passthrough-behaviors.html
+                .passThroughBehavior(isPreflightSynced ? "never" : "when_no_match")
                 .putResponse("default", responseBuilder.build())
                 .putRequestTemplate(API_GATEWAY_DEFAULT_ACCEPT_VALUE, PREFLIGHT_SUCCESS);
+
+        if (isPreflightSynced) {
+            // Adds request template for every unique Content-Type supported by all path operations.
+            // This ensures that for Content-Type(s) other than 'application/json', the entire request payload
+            // is not sent to APIGW mock integration as stipulated by 'when_no_match' passthroughBehavior.
+            // APIGW throws an error if the mock integration request does not follow a set contract,
+            // example {"statusCode":200}.
+            for (OperationObject operation : pathItem.getOperations().values()) {
+                ObjectNode extensionNode = operation.getExtension(INTEGRATION_EXTENSION)
+                        .flatMap(Node::asObjectNode)
+                        .orElse(Node.objectNode());
+                Set<String> mimeTypes = extensionNode.getObjectMember(REQUEST_TEMPLATES_KEY)
+                        .map(ObjectNode::getStringMap)
+                        .map(Map::keySet)
+                        .orElse(SetUtils.of());
+                mimeTypes.forEach(mimeType -> integration.putRequestTemplate(mimeType, PREFLIGHT_SUCCESS));
+            }
+        }
 
         // Add a request template for every mime-type of every response.
         for (OperationObject operation : pathItem.getOperations().values()) {

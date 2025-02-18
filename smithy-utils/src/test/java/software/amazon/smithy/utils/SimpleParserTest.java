@@ -1,3 +1,7 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 package software.amazon.smithy.utils;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -14,7 +18,7 @@ public class SimpleParserTest {
     public void simpleParserBasics() {
         SimpleParser p = new SimpleParser("foo", 10);
 
-        assertThat(p.expression(), equalTo("foo"));
+        assertThat(p.input().toString(), equalTo("foo"));
         assertThat(p.line(), equalTo(1));
         assertThat(p.column(), equalTo(1));
         assertThat(p.position(), equalTo(0));
@@ -31,7 +35,7 @@ public class SimpleParserTest {
             new SimpleParser("foo").expect('!');
         });
 
-        assertThat(e.getMessage(), equalTo("Syntax error at line 1 column 1: Expected: '!', but found 'f'"));
+        assertThat(e.getMessage(), equalTo("Syntax error at line 1, column 1: Expected: '!', but found 'f'"));
     }
 
     @Test
@@ -40,8 +44,9 @@ public class SimpleParserTest {
             new SimpleParser("foo").expect('!', '?');
         });
 
-        assertThat(e.getMessage(), equalTo(
-                "Syntax error at line 1 column 1: Found 'f', but expected one of the following tokens: '!' '?'"));
+        assertThat(e.getMessage(),
+                equalTo(
+                        "Syntax error at line 1, column 1: Found 'f', but expected one of the following tokens: '!' '?'"));
     }
 
     @Test
@@ -50,8 +55,9 @@ public class SimpleParserTest {
             new SimpleParser("").expect('!', '?');
         });
 
-        assertThat(e.getMessage(), equalTo(
-                "Syntax error at line 1 column 1: Found '[EOF]', but expected one of the following tokens: '!' '?'"));
+        assertThat(e.getMessage(),
+                equalTo(
+                        "Syntax error at line 1, column 1: Found '[EOF]', but expected one of the following tokens: '!' '?'"));
     }
 
     @Test

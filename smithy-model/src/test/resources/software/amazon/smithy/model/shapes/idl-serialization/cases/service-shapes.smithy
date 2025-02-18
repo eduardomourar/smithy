@@ -23,17 +23,21 @@ resource MyResource {
     identifiers: {
         id: String
     }
+    properties: {
+        value: String
+        other: String
+    }
     put: ResourceOperation
-    create: ResourceOperation
+    create: EmptyOperation
     read: ReadonlyResourceOperation
     update: ResourceOperation
     delete: ResourceOperation
-    list: ReadonlyResourceOperation
+    list: CollectionResourceOperation
     operations: [
-        ResourceOperation
+        CollectionResourceOperation
     ]
     collectionOperations: [
-        ResourceOperation
+        CollectionResourceOperation
     ]
     resources: [
         SubResource
@@ -44,6 +48,15 @@ resource SubResource {
     identifiers: {
         id: String
     }
+}
+
+@readonly
+operation CollectionResourceOperation {
+    input := {}
+    output := {}
+    errors: [
+        Error
+    ]
 }
 
 operation EmptyOperation {
@@ -62,6 +75,7 @@ operation MyOperation {
 @readonly
 operation ReadonlyResourceOperation {
     input := {
+        @required
         id: String
     }
     output: Unit
@@ -70,9 +84,13 @@ operation ReadonlyResourceOperation {
 @idempotent
 operation ResourceOperation {
     input := {
+        @required
         id: String
     }
-    output: Unit
+    output := {
+        value: String
+        other: String
+    }
 }
 
 @error("client")

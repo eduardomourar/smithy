@@ -1,22 +1,12 @@
 /*
- * Copyright 2021 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.validation.suppressions;
 
 import java.util.Collection;
 import java.util.Optional;
+import java.util.function.Predicate;
 import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.node.ObjectNode;
 import software.amazon.smithy.model.validation.ValidationEvent;
@@ -33,15 +23,18 @@ final class MetadataSuppression implements Suppression {
     private static final String NAMESPACE = "namespace";
     private static final String REASON = "reason";
     private static final Collection<String> SUPPRESSION_KEYS = ListUtils.of(ID, NAMESPACE, REASON);
+    private static final Predicate<ValidationEvent> STAR_MATCHER = event -> true;
 
     private final String id;
     private final String namespace;
     private final String reason;
+    private final Predicate<ValidationEvent> namespaceMatcher;
 
     MetadataSuppression(String id, String namespace, String reason) {
         this.id = id;
         this.namespace = namespace;
         this.reason = reason;
+        this.namespaceMatcher = namespace.equals("*") ? STAR_MATCHER : new NamespacePredicate(namespace);
     }
 
     static MetadataSuppression fromNode(Node node) {
@@ -55,16 +48,11 @@ final class MetadataSuppression implements Suppression {
 
     @Override
     public boolean test(ValidationEvent event) {
-        return event.containsId(id) && matchesNamespace(event);
+        return event.containsId(id) && namespaceMatcher.test(event);
     }
 
     @Override
     public Optional<String> getReason() {
         return Optional.ofNullable(reason);
-    }
-
-    private boolean matchesNamespace(ValidationEvent event) {
-        return namespace.equals("*")
-               || event.getShapeId().filter(id -> id.getNamespace().equals(namespace)).isPresent();
     }
 }

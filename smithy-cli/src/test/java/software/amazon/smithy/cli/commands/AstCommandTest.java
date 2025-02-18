@@ -1,3 +1,7 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 package software.amazon.smithy.cli.commands;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -25,24 +29,6 @@ public class AstCommandTest {
 
         assertThat(result.code(), equalTo(0));
         assertThat(result.stdout(), containsString("Reads"));
-    }
-
-    @Test
-    public void usesModelDiscoveryWithCustomValidClasspath() throws Exception {
-        String dir = Paths.get(getClass().getResource("valid.jar").toURI()).toString();
-        CliUtils.Result result = CliUtils.runSmithy("ast", "--debug", "--discover-classpath", dir);
-
-        assertThat(result.code(), equalTo(0));
-        assertThat(result.stdout(), containsString("{"));
-    }
-
-    @Test
-    public void usesModelDiscoveryWithCustomInvalidClasspath() throws Exception {
-        String dir = Paths.get(getClass().getResource("invalid.jar").toURI()).toString();
-        CliUtils.Result result = CliUtils.runSmithy("ast", "--debug", "--discover-classpath", dir);
-
-        assertThat(result.code(), not(0));
-        assertThat(result.stderr(), containsString("ERROR: 1"));
     }
 
     @Test

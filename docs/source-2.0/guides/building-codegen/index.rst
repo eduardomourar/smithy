@@ -1,6 +1,6 @@
---------------------------------
-Creating a Smithy Code Generator
---------------------------------
+-------------------------
+Creating a Code Generator
+-------------------------
 
 This guide describes how to structure a new Smithy code generator so that
 the generator can be used to build generic clients for any web service
@@ -128,5 +128,5 @@ Navigation
 .. observability, Smithy reference architecture, paginators,
 .. waiters, endpoint resolution
 
-.. _Smithy's Java reference implementation: https://github.com/awslabs/smithy
+.. _Smithy's Java reference implementation: https://github.com/smithy-lang/smithy
 .. _Gradle: https://gradle.org

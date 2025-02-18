@@ -12,7 +12,8 @@ Smithy code generators are configured using plugins defined in
 smithy-build.json files. For example:
 
 .. code-block:: json
-    :emphasize-lines: 4-9
+    :caption: smithy-build.json
+    :emphasize-lines: 4-8
 
     {
         "version": "1.0",

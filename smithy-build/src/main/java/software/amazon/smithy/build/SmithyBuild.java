@@ -1,21 +1,13 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.build;
 
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
 import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.HashSet;
@@ -29,6 +21,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.logging.Logger;
 import software.amazon.smithy.build.model.SmithyBuildConfig;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.loader.ModelAssembler;
@@ -41,6 +34,9 @@ import software.amazon.smithy.model.transform.ModelTransformer;
 public final class SmithyBuild {
     /** The version of Smithy build. */
     public static final String VERSION = "1.0";
+
+    private static final Logger LOGGER = Logger.getLogger(SmithyBuild.class.getName());
+    private static final PathMatcher VALID_MODELS = FileSystems.getDefault().getPathMatcher("glob:*.{json,jar,smithy}");
 
     SmithyBuildConfig config;
     Path outputDirectory;
@@ -131,7 +127,9 @@ public final class SmithyBuild {
             message.append(System.lineSeparator()).append(System.lineSeparator());
 
             for (Map.Entry<String, Throwable> e : errors.entrySet()) {
-                message.append("(").append(e.getKey()).append("): ")
+                message.append("(")
+                        .append(e.getKey())
+                        .append("): ")
                         .append(e.getValue())
                         .append(System.lineSeparator());
             }
@@ -187,8 +185,14 @@ public final class SmithyBuild {
     // Add a source path using absolute paths to better de-conflict source files. ModelAssembler also
     // de-conflicts imports with absolute paths, but this ensures the same file doesn't appear twice in
     // the build plugin output (though it does not use realpath to de-conflict based on symlinks).
+    //
+    // Ignores and logs when an unsupported model file is encountered.
     private void addSource(Path path) {
-        sources.add(path.toAbsolutePath());
+        if (Files.isRegularFile(path) && !VALID_MODELS.matches(path.getFileName())) {
+            LOGGER.warning("Omitting unsupported Smithy model file from model sources: " + path);
+        } else {
+            sources.add(path.toAbsolutePath());
+        }
     }
 
     /**
@@ -379,6 +383,12 @@ public final class SmithyBuild {
      * as a source. All of the relativized files resolved in sources must be
      * unique across the entire set of files. The sources directories are
      * essentially flattened into a single directory.
+     *
+     * <p>Unsupported model files are ignored and not treated as sources.
+     * This can happen when adding model files from a directory that contains
+     * a mix of model files and non-model files. Filtering models here prevents
+     * unsupported files from appearing in places like JAR manifest files where
+     * they are not allowed.
      *
      * @param pathToSources Path to source directories to mark.
      * @return Returns the builder.

@@ -18,6 +18,34 @@ metadata suppressions = [
     }
 ]
 
+metadata validators = [
+    {
+        name: "EmitEachSelector"
+        id: "UnboundTestOperation"
+        severity: "WARNING"
+        message: "This operation in the AWS protocol tests is not bound to a service."
+        namespaces: [
+            // Overall protocol test suites.
+            "aws.protocoltests.json10"
+            "aws.protocoltests.json"
+            "aws.protocoltests.query"
+            "aws.protocoltests.ec2"
+            "aws.protocoltests.restjson.validation"
+            "aws.protocoltests.restjson"
+            "aws.protocoltests.restxml"
+            "aws.protocoltests.restxml.xmlns"
+            // Service specific test suites.
+            "com.amazonaws.apigateway"
+            "com.amazonaws.glacier"
+            "com.amazonaws.machinelearning"
+            "com.amazonaws.s3"
+        ]
+        configuration: {
+            "selector": "operation :not(< service)"
+        }
+    }
+]
+
 namespace aws.protocoltests.shared
 
 list StringList {
@@ -55,6 +83,15 @@ list NestedStringList {
     member: StringList,
 }
 
+list ShortList {
+    member: Short,
+}
+
+@sparse
+list SparseShortList {
+    member: Short
+}
+
 list IntegerList {
     member: Integer,
 }
@@ -62,6 +99,10 @@ list IntegerList {
 @uniqueItems
 list IntegerSet {
     member: Integer,
+}
+
+list FloatList {
+    member: Float,
 }
 
 list DoubleList {
@@ -81,9 +122,17 @@ list TimestampList {
     member: Timestamp,
 }
 
+list BlobList {
+    member: Blob,
+}
+
 @uniqueItems
 list BlobSet {
     member: Blob,
+}
+
+list ByteList {
+    member: Byte,
 }
 
 @uniqueItems
@@ -96,6 +145,11 @@ list ShortSet {
 }
 
 @uniqueItems
+list LongList {
+    member: Long,
+}
+
+@uniqueItems
 list LongSet {
     member: Long,
 }
@@ -103,6 +157,10 @@ list LongSet {
 @uniqueItems
 list TimestampSet {
     member: Timestamp,
+}
+
+list DateTimeList {
+    member: DateTime,
 }
 
 @uniqueItems
@@ -192,10 +250,10 @@ list IntegerEnumList {
 
 @uniqueItems
 list IntegerEnumSet {
-     member: IntegerEnum
+    member: IntegerEnum
 }
 
 map IntegerEnumMap {
-     key: String,
-     value: IntegerEnum
+    key: String,
+    value: IntegerEnum
 }

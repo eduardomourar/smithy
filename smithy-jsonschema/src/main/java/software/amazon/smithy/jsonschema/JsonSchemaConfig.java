@@ -1,18 +1,7 @@
 /*
- * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.jsonschema;
 
 import java.util.HashSet;
@@ -96,11 +85,42 @@ public class JsonSchemaConfig {
         }
     }
 
+    /**
+     * Configures how Smithy enum shapes are converted to JSON Schema
+     */
+    public enum EnumStrategy {
+
+        /**
+         * Converts to a schema that uses enum, which contains an array of strings
+         *
+         * <p>This is the default setting used if not configured.
+         */
+        ENUM("enum"),
+
+        /**
+         * Converts to a schema that uses oneOf, with an array of const strings and optional
+         * descriptions for documentation purposes
+         */
+        ONE_OF("oneOf");
+
+        private final String stringValue;
+
+        EnumStrategy(String stringValue) {
+            this.stringValue = stringValue;
+        }
+
+        @Override
+        public String toString() {
+            return stringValue;
+        }
+    }
+
     private boolean alphanumericOnlyRefs;
     private boolean useJsonName;
     private TimestampFormatTrait.Format defaultTimestampFormat = TimestampFormatTrait.Format.DATE_TIME;
     private UnionStrategy unionStrategy = UnionStrategy.ONE_OF;
     private MapStrategy mapStrategy = MapStrategy.PROPERTY_NAMES;
+    private EnumStrategy enumStrategy = EnumStrategy.ENUM;
     private String definitionPointer;
     private ObjectNode schemaDocumentExtensions = Node.objectNode();
     private ObjectNode extensions = Node.objectNode();
@@ -112,6 +132,10 @@ public class JsonSchemaConfig {
     private boolean supportNonNumericFloats = false;
     private boolean enableOutOfServiceReferences = false;
     private boolean useIntegerType;
+    private boolean disableDefaultValues = false;
+    private boolean disableIntEnums = false;
+    private boolean addReferenceDescriptions = false;
+    private boolean useInlineMaps = false;
 
     public JsonSchemaConfig() {
         nodeMapper.setWhenMissingSetter(NodeMapper.WhenMissing.IGNORE);
@@ -191,6 +215,18 @@ public class JsonSchemaConfig {
      */
     public void setMapStrategy(MapStrategy mapStrategy) {
         this.mapStrategy = mapStrategy;
+    }
+
+    public EnumStrategy getEnumStrategy() {
+        return enumStrategy;
+    }
+
+    /**
+     * Configures how Smithy enum shapes ae converted to JSON Schema
+     * @param enumStrategy The enum strategy to use
+     */
+    public void setEnumStrategy(EnumStrategy enumStrategy) {
+        this.enumStrategy = enumStrategy;
     }
 
     public String getDefinitionPointer() {
@@ -387,7 +423,6 @@ public class JsonSchemaConfig {
         this.enableOutOfServiceReferences = enableOutOfServiceReferences;
     }
 
-
     public boolean getUseIntegerType() {
         return useIntegerType;
     }
@@ -405,6 +440,32 @@ public class JsonSchemaConfig {
         this.useIntegerType = useIntegerType;
     }
 
+    public boolean getDisableDefaultValues() {
+        return disableDefaultValues;
+    }
+
+    /**
+     * Set to true to disable default values on schemas, including wrapping $ref pointers in an `allOf`.
+     *
+     * @param disableDefaultValues True to disable setting default values.
+     */
+    public void setDisableDefaultValues(boolean disableDefaultValues) {
+        this.disableDefaultValues = disableDefaultValues;
+    }
+
+    public boolean getDisableIntEnums() {
+        return disableIntEnums;
+    }
+
+    /**
+     * Set to true to disable setting an `enum` property for intEnums. When disabled,
+     * intEnums are inlined instead of using a $ref.
+     *
+     * @param disableIntEnums True to disable setting `enum` property for intEnums.
+     */
+    public void setDisableIntEnums(boolean disableIntEnums) {
+        this.disableIntEnums = disableIntEnums;
+    }
 
     /**
      * JSON schema version to use when converting Smithy shapes into Json Schema.
@@ -424,5 +485,49 @@ public class JsonSchemaConfig {
      */
     public void setJsonSchemaVersion(JsonSchemaVersion schemaVersion) {
         this.jsonSchemaVersion = Objects.requireNonNull(schemaVersion);
+    }
+
+    /**
+     * Whether to add the {@code description} property to Schema References
+     * when converting Smithy member shapes into JSON Schema with the value
+     * of the member's documentation.
+     *
+     * <p>Defaults to {@code false}.</p>
+     *
+     * @return Whether to add descriptions to Schema References.
+     */
+    public boolean getAddReferenceDescriptions() {
+        return addReferenceDescriptions;
+    }
+
+    /**
+     * Sets whether the {@code description} property should be added to Schema References.
+     *
+     * @param addReferenceDescriptions Whether to add descriptions to Schema References
+     */
+    public void setAddReferenceDescriptions(boolean addReferenceDescriptions) {
+        this.addReferenceDescriptions = addReferenceDescriptions;
+    }
+
+    /**
+     * Whether to inline map shapes when creating JSON Schema object types
+     * from them.
+     *
+     * <p>Defaults to {@code false}.</p>
+     *
+     * @return Whether to inline map shapes in the resulting schema
+     */
+    public boolean getUseInlineMaps() {
+        return useInlineMaps;
+    }
+
+    /**
+     * Sets whether to inline map shapes when creating JSON schema object types
+     * from them.
+     *
+     * @param useInlineMaps Whether to inline map shapes in the resulting schema.
+     */
+    public void setUseInlineMaps(boolean useInlineMaps) {
+        this.useInlineMaps = useInlineMaps;
     }
 }

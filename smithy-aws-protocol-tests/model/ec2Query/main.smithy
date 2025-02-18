@@ -18,7 +18,7 @@
 //
 // 1. Unlike aws.query, there's no result wrapper.
 // 2. EC2 does not utilize output maps.
-// 3. RequestId is a child of the root node. It's not nested in some
+// 3. requestId is a child of the root node. It's not nested in some
 //    ResponseMetadata element like aws.query.
 //
 // EC2 errors have an additional level of nesting. See xml-errors.smithy
@@ -29,14 +29,18 @@ $version: "2.0"
 namespace aws.protocoltests.ec2
 
 use aws.api#service
+use aws.auth#sigv4
 use aws.protocols#ec2Query
 use smithy.test#httpRequestTests
 use smithy.test#httpResponseTests
 
 /// An EC2 query service that sends query requests and XML responses.
 @service(sdkId: "EC2 Protocol")
+@suppress(["SigV4Traits"])
+@sigv4(name: "ec2query")
 @ec2Query
 @xmlNamespace(uri: "https://example.com/")
+@title("Sample Ec2 Protocol Service")
 service AwsEc2 {
     version: "2020-01-08",
     operations: [
@@ -82,5 +86,8 @@ service AwsEc2 {
         // client-only timestamp parsing tests
         DatetimeOffsets,
         FractionalSeconds,
+
+        // requestCompression trait tests
+        PutWithContentEncoding
     ]
 }

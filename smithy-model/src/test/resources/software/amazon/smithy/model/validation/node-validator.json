@@ -28,6 +28,23 @@
                 }
             }
         },
+        "ns.foo#IntEnum": {
+            "type": "intEnum",
+            "members": {
+                "V1": {
+                    "target": "smithy.api#Unit",
+                    "traits": {
+                        "smithy.api#enumValue": 1
+                    }
+                },
+                "V2": {
+                    "target": "smithy.api#Unit",
+                    "traits": {
+                        "smithy.api#enumValue": 2
+                    }
+                }
+            }
+        },
         "ns.foo#Long": {
             "type": "long",
             "traits": {
@@ -133,6 +150,24 @@
                 }
             }
         },
+        "ns.foo#UniqueList": {
+            "type": "list",
+            "member": {
+                "target": "ns.foo#String"
+            },
+            "traits": {
+                "smithy.api#uniqueItems": {}
+            }
+        },
+        "ns.foo#SparseList": {
+            "type": "list",
+            "member": {
+                "target": "ns.foo#String"
+            },
+            "traits": {
+                "smithy.api#sparse": {}
+            }
+        },
         "ns.foo#String": {
             "type": "string"
         },
@@ -158,6 +193,18 @@
                     "min": 1,
                     "max": 2
                 }
+            }
+        },
+        "ns.foo#SparseMap": {
+            "type": "map",
+            "key": {
+                "target": "ns.foo#KeyString"
+            },
+            "value": {
+                "target": "ns.foo#List"
+            },
+            "traits": {
+                "smithy.api#sparse": {}
             }
         },
         "ns.foo#Structure": {
@@ -265,6 +312,20 @@
                     "traits": {
                         "smithy.api#required": {}
                     }
+                }
+            }
+        },
+        "ns.foo#Structure4": {
+            "type": "structure",
+            "members": {
+                "httpDate": {
+                    "target": "smithy.api#Timestamp",
+                    "traits": {
+                        "smithy.api#timestampFormat": "http-date"
+                    }
+                },
+                "httpDateTarget": {
+                    "target": "ns.foo#HttpDate"
                 }
             }
         },

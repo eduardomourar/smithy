@@ -1,18 +1,7 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.utils;
 
 import java.io.IOException;
@@ -91,7 +80,7 @@ final class CodeFormatter {
         void apply(Sink sink, AbstractCodeWriter<?> writer) throws IOException;
 
         // Writes literal segments of the input string.
-        static Operation stringSlice(String source, int start, int end) {
+        static Operation stringSlice(CharSequence source, int start, int end) {
             return (sink, writer) -> Sink.writeString(sink, source, start, end);
         }
 
@@ -406,12 +395,12 @@ final class CodeFormatter {
 
             throw new IllegalArgumentException(
                     "Unclosed parse conditional blocks: ["
-                    + blocks.stream()
-                            // Don't include the root block.
-                            .filter(b -> !b.variable().isEmpty())
-                            .map(BlockOperation::variable)
-                            .collect(Collectors.joining(", "))
-                    + "]");
+                            + blocks.stream()
+                                    // Don't include the root block.
+                                    .filter(b -> !b.variable().isEmpty())
+                                    .map(BlockOperation::variable)
+                                    .collect(Collectors.joining(", "))
+                            + "]");
         }
 
         private void ensureAllPositionalArgumentsWereUsed() {
@@ -432,7 +421,7 @@ final class CodeFormatter {
             } else {
                 // Output any pending captured text before the output of the expression.
                 if (pendingTextStart > -1) {
-                    pushOperation(Operation.stringSlice(parser.expression(), pendingTextStart, parser.position() - 1));
+                    pushOperation(Operation.stringSlice(parser.input(), pendingTextStart, parser.position() - 1));
                 }
                 pushOperation(parseNormalArgument());
             }
@@ -456,7 +445,7 @@ final class CodeFormatter {
                 parser.skip();
                 if (pendingTextStart > -1) {
                     while (startPosition > pendingTextStart
-                           && Character.isWhitespace(parser.expression().charAt(startPosition - 1))) {
+                            && Character.isWhitespace(parser.input().charAt(startPosition - 1))) {
                         startPosition--;
                     }
                 }
@@ -474,7 +463,7 @@ final class CodeFormatter {
 
             // Output any pending captured text before the output of the expression.
             if (pendingTextStart > -1) {
-                pushOperation(Operation.stringSlice(parser.expression(), pendingTextStart, startPosition));
+                pushOperation(Operation.stringSlice(parser.input(), pendingTextStart, startPosition));
             }
 
             Operation operation = parseNormalArgument();
@@ -482,7 +471,7 @@ final class CodeFormatter {
             if (parser.peek() == '@') {
                 parser.skip();
                 int start = parser.position();
-                parser.consumeUntilNoLongerMatches(this::isNameCharacter);
+                parser.consumeWhile(this::isNameCharacter);
                 String sectionName = parser.sliceFrom(start);
                 ensureNameIsValid(sectionName);
                 operation = Operation.inlineSection(sectionName, operation);
@@ -518,7 +507,7 @@ final class CodeFormatter {
         }
 
         void skipTrailingWhitespaceInParser() {
-            parser.consumeUntilNoLongerMatches(Character::isWhitespace);
+            parser.consumeWhile(Character::isWhitespace);
         }
 
         private boolean isAllLeadingWhitespaceOnLine(int startPosition, int startColumn) {
@@ -549,13 +538,13 @@ final class CodeFormatter {
                         parser.expect('s');
                         parser.sp();
                         int startPos = parser.position();
-                        parser.consumeUntilNoLongerMatches(this::isNameCharacter);
+                        parser.consumeWhile(this::isNameCharacter);
                         keyPrefix = parser.sliceFrom(startPos);
                         ensureNameIsValid(keyPrefix);
                         parser.expect(',');
                         parser.sp();
                         startPos = parser.position();
-                        parser.consumeUntilNoLongerMatches(this::isNameCharacter);
+                        parser.consumeWhile(this::isNameCharacter);
                         value = parser.sliceFrom(startPos);
                         ensureNameIsValid(value);
                     }
@@ -583,16 +572,17 @@ final class CodeFormatter {
             if (parser.peek() != '\r' && parser.peek() != '\n' && parser.peek() != Character.MIN_VALUE) {
                 // If the expression is not followed directly by a newline, then all leading text.
                 if (pendingTextStart > -1) {
-                    pushOperation(Operation.stringSlice(parser.expression(), pendingTextStart, startPosition));
+                    pushOperation(Operation.stringSlice(parser.input(), pendingTextStart, startPosition));
                 }
             } else if (isAllLeadingWhitespaceOnLine(startPosition, startColumn)) {
                 if (pendingTextStart > -1) {
-                    pushOperation(Operation.stringSlice(parser.expression(), pendingTextStart,
-                                                        startPosition - startColumn));
+                    pushOperation(Operation.stringSlice(parser.input(),
+                            pendingTextStart,
+                            startPosition - startColumn));
                 }
                 parser.skip();
             } else if (pendingTextStart > -1) {
-                pushOperation(Operation.stringSlice(parser.expression(), pendingTextStart, startPosition));
+                pushOperation(Operation.stringSlice(parser.input(), pendingTextStart, startPosition));
             }
         }
 
@@ -610,7 +600,7 @@ final class CodeFormatter {
             BlockOperation block = blocks.pop();
             if (!block.variable().equals(name)) {
                 throw new IllegalArgumentException("Invalid closing tag: '" + name + "'. Expected: '"
-                                                   + block.variable() + "'");
+                        + block.variable() + "'");
             }
 
             blocks.getFirst().push(block);
@@ -635,18 +625,22 @@ final class CodeFormatter {
             // Parse the formatter and apply it.
             int line = parser.line();
             int column = parser.column();
-            char identifier = parser.expect(CodeWriterFormatterContainer.VALID_FORMATTER_CHARS);
+            char identifier = parser.expect(AbstractCodeWriter.VALID_FORMATTER_CHARS);
 
             // The error message needs to be created here and given to the operation in way that it can
             // throw with an appropriate message.
-            return Operation.formatted(getter, identifier, () -> createErrorMessage(String.format(
-                    "Syntax error at line %d column %d: Unknown formatter `%c` found in format string",
-                    line, column, identifier)));
+            return Operation.formatted(getter,
+                    identifier,
+                    () -> createErrorMessage(String.format(
+                            "Syntax error at line %d column %d: Unknown formatter `%c` found in format string",
+                            line,
+                            column,
+                            identifier)));
         }
 
         private String parseArgumentName() {
             int start = parser.position();
-            parser.consumeUntilNoLongerMatches(this::isNameCharacter);
+            parser.consumeWhile(this::isNameCharacter);
             String name = parser.sliceFrom(start);
             ensureNameIsValid(name);
             return name;
@@ -678,7 +672,8 @@ final class CodeFormatter {
         private Object getPositionalArgument(int index) {
             if (index >= arguments.length) {
                 throw error(String.format("Given %d arguments but attempted to format index %d",
-                                          arguments.length, index));
+                        arguments.length,
+                        index));
             } else {
                 // Track the usage of the positional argument.
                 positionals[index] = true;
@@ -694,13 +689,14 @@ final class CodeFormatter {
 
             relativeIndex = -1;
             int startPosition = parser.position();
-            parser.consumeUntilNoLongerMatches(Character::isDigit);
+            parser.consumeWhile(Character::isDigit);
             int index = Integer.parseInt(parser.sliceFrom(startPosition)) - 1;
 
             if (index < 0 || index >= arguments.length) {
                 throw error(String.format(
                         "Positional argument index %d out of range of provided %d arguments in format string",
-                        index, arguments.length));
+                        index,
+                        arguments.length));
             }
 
             Object value = getPositionalArgument(index);
@@ -713,14 +709,14 @@ final class CodeFormatter {
             }
         }
 
-        private boolean isNameCharacter(char c) {
+        private boolean isNameCharacter(int c) {
             return (c >= 'a' && c <= 'z')
-                   || (c >= 'A' && c <= 'Z')
-                   || (c >= '0' && c <= '9')
-                   || c == '_'
-                   || c == '.'
-                   || c == '#'
-                   || c == '$';
+                    || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9')
+                    || c == '_'
+                    || c == '.'
+                    || c == '#'
+                    || c == '$';
         }
     }
 }

@@ -1,18 +1,7 @@
 /*
- * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.knowledge;
 
 import java.util.Collection;
@@ -25,6 +14,7 @@ import java.util.function.Predicate;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.neighbor.NeighborProvider;
 import software.amazon.smithy.model.neighbor.Relationship;
+import software.amazon.smithy.model.neighbor.RelationshipType;
 import software.amazon.smithy.model.neighbor.Walker;
 import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ResourceShape;
@@ -48,18 +38,8 @@ public final class TopDownIndex implements KnowledgeIndex {
 
         // Only traverse resource and operation bindings.
         Predicate<Relationship> filter = rel -> {
-            switch (rel.getRelationshipType()) {
-                case RESOURCE:
-                case OPERATION:
-                case CREATE:
-                case READ:
-                case UPDATE:
-                case DELETE:
-                case LIST:
-                    return true;
-                default:
-                    return false;
-            }
+            RelationshipType type = rel.getRelationshipType();
+            return type == RelationshipType.RESOURCE || type.isOperationBinding();
         };
 
         for (ResourceShape resource : model.getResourceShapes()) {

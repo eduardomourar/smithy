@@ -1,21 +1,11 @@
 /*
- * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.aws.cloudformation.traits;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -33,24 +23,26 @@ import software.amazon.smithy.utils.ToSmithyBuilder;
  * Contains extracted resource information.
  */
 public final class CfnResource implements ToSmithyBuilder<CfnResource> {
-    private final Map<String, CfnResourceProperty> propertyDefinitions = new HashMap<>();
-    private final Map<String, CfnResourceProperty> availableProperties = new HashMap<>();
-    private final Set<ShapeId> excludedProperties = new HashSet<>();
-    private final Set<String> primaryIdentifiers = new HashSet<>();
-    private final List<Set<String>> additionalIdentifiers = new ArrayList<>();
+    private final Map<String, CfnResourceProperty> propertyDefinitions;
+    private final Map<String, CfnResourceProperty> availableProperties;
+    private final Set<ShapeId> excludedProperties;
+    private final Set<String> primaryIdentifiers;
+    private final List<Set<String>> additionalIdentifiers;
 
     private CfnResource(Builder builder) {
-        propertyDefinitions.putAll(builder.propertyDefinitions);
-        excludedProperties.addAll(builder.excludedProperties);
-        primaryIdentifiers.addAll(builder.primaryIdentifiers);
-        additionalIdentifiers.addAll(builder.additionalIdentifiers);
+        Map<String, CfnResourceProperty> propertyDefinitions = new HashMap<>(builder.propertyDefinitions);
+        Map<String, CfnResourceProperty> availableProperties = new HashMap<>();
+        this.excludedProperties = Collections.unmodifiableSet(builder.excludedProperties);
+        this.primaryIdentifiers = Collections.unmodifiableSet(builder.primaryIdentifiers);
+        this.additionalIdentifiers = Collections.unmodifiableList(builder.additionalIdentifiers);
 
         // Pre-compute the properties available, cleaning up any exclusions.
         for (Map.Entry<String, CfnResourceProperty> propertyDefinition : propertyDefinitions.entrySet()) {
             for (ShapeId shapeId : propertyDefinition.getValue().getShapeIds()) {
                 if (excludedProperties.contains(shapeId)) {
                     // Remove an excluded ShapeId for validation.
-                    CfnResourceProperty updatedDefinition = propertyDefinition.getValue().toBuilder()
+                    CfnResourceProperty updatedDefinition = propertyDefinition.getValue()
+                            .toBuilder()
                             .removeShapeId(shapeId)
                             .build();
                     propertyDefinitions.put(propertyDefinition.getKey(), updatedDefinition);
@@ -65,6 +57,9 @@ public final class CfnResource implements ToSmithyBuilder<CfnResource> {
                 }
             }
         }
+
+        this.propertyDefinitions = Collections.unmodifiableMap(propertyDefinitions);
+        this.availableProperties = Collections.unmodifiableMap(availableProperties);
     }
 
     public static Builder builder() {
@@ -158,10 +153,11 @@ public final class CfnResource implements ToSmithyBuilder<CfnResource> {
     }
 
     private Set<String> getConstrainedProperties(Predicate<CfnResourceProperty> constraint) {
-        return getProperties().entrySet().stream()
-                       .filter(property -> constraint.test(property.getValue()))
-                       .map(Map.Entry::getKey)
-                       .collect(Collectors.toSet());
+        return getProperties().entrySet()
+                .stream()
+                .filter(property -> constraint.test(property.getValue()))
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toSet());
     }
 
     /**

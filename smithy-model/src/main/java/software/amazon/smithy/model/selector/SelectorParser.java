@@ -1,18 +1,7 @@
 /*
- * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.selector;
 
 import java.util.ArrayList;
@@ -27,7 +16,6 @@ import software.amazon.smithy.model.shapes.CollectionShape;
 import software.amazon.smithy.model.shapes.NumberShape;
 import software.amazon.smithy.model.shapes.ShapeType;
 import software.amazon.smithy.model.shapes.SimpleShape;
-import software.amazon.smithy.utils.ListUtils;
 import software.amazon.smithy.utils.SetUtils;
 import software.amazon.smithy.utils.SimpleParser;
 
@@ -39,6 +27,7 @@ final class SelectorParser extends SimpleParser {
     private static final Logger LOGGER = Logger.getLogger(SelectorParser.class.getName());
     private static final Set<Character> BREAK_TOKENS = SetUtils.of(',', ']', ')');
     private static final Set<String> REL_TYPES = new HashSet<>();
+    private final List<InternalSelector> roots = new ArrayList<>();
 
     static {
         // Adds selector relationship labels for warnings when unknown relationship names are used.
@@ -52,7 +41,9 @@ final class SelectorParser extends SimpleParser {
     }
 
     static Selector parse(String selector) {
-        return new WrappedSelector(selector, new SelectorParser(selector).parse());
+        SelectorParser parser = new SelectorParser(selector);
+        List<InternalSelector> result = parser.parse();
+        return new WrappedSelector(selector, result, parser.roots);
     }
 
     List<InternalSelector> parse() {
@@ -60,7 +51,7 @@ final class SelectorParser extends SimpleParser {
     }
 
     private List<InternalSelector> recursiveParse() {
-        List<InternalSelector> selectors = new ArrayList<>();
+        List<InternalSelector> selectors = new IgnoreIdentitySelectorArray();
 
         // createSelector() will strip leading ws.
         selectors.add(createSelector());
@@ -76,6 +67,16 @@ final class SelectorParser extends SimpleParser {
         }
 
         return selectors;
+    }
+
+    /**
+     * Filter out unnecessary identity selectors when creating the finalized AST to evaluate selectors.
+     */
+    private static final class IgnoreIdentitySelectorArray extends ArrayList<InternalSelector> {
+        @Override
+        public boolean add(InternalSelector o) {
+            return o != InternalSelector.IDENTITY && super.add(o);
+        }
     }
 
     private InternalSelector createSelector() {
@@ -96,7 +97,7 @@ final class SelectorParser extends SimpleParser {
                 }
             case '>': // forward undirected neighbor
                 skip();
-                return new ForwardNeighborSelector(ListUtils.of());
+                return NeighborSelector.FORWARD;
             case '<': // reverse [un]directed neighbor
                 skip();
                 if (peek() == '-') { // reverse directed neighbor (<-[X, Y, Z]-)
@@ -104,7 +105,7 @@ final class SelectorParser extends SimpleParser {
                     expect('[');
                     return parseSelectorDirectedReverseNeighbor();
                 } else { // reverse undirected neighbor (<)
-                    return new ReverseNeighborSelector(ListUtils.of());
+                    return NeighborSelector.REVERSE;
                 }
             case '~': // ~>
                 skip();
@@ -145,7 +146,7 @@ final class SelectorParser extends SimpleParser {
 
     @Override
     public SelectorSyntaxException syntax(String message) {
-        return new SelectorSyntaxException(message, expression(), position(), line(), column());
+        return new SelectorSyntaxException(message, input().toString(), position(), line(), column());
     }
 
     private InternalSelector parseVariable() {
@@ -177,13 +178,13 @@ final class SelectorParser extends SimpleParser {
         // Get the remainder of the "]->" token.
         expect('-');
         expect('>');
-        return new ForwardNeighborSelector(relationships);
+        return NeighborSelector.forward(relationships);
     }
 
     private InternalSelector parseSelectorDirectedReverseNeighbor() {
         List<String> relationships = parseSelectorDirectedRelationships();
         expect('-');
-        return new ReverseNeighborSelector(relationships);
+        return NeighborSelector.reverse(relationships);
     }
 
     private List<String> parseSelectorDirectedRelationships() {
@@ -201,7 +202,9 @@ final class SelectorParser extends SimpleParser {
             if (!REL_TYPES.contains(next)) {
                 LOGGER.warning(String.format(
                         "Unknown relationship type '%s' found near %s. Expected one of: %s",
-                        next, position() - next.length(), REL_TYPES));
+                        next,
+                        position() - next.length(),
+                        REL_TYPES));
             }
 
             ws();
@@ -220,27 +223,66 @@ final class SelectorParser extends SimpleParser {
                 if (selectors.size() != 1) {
                     throw new SelectorSyntaxException(
                             "The :not function requires a single selector argument",
-                            expression(), functionPosition, line(), column());
+                            input().toString(),
+                            functionPosition,
+                            line(),
+                            column());
                 }
                 return new NotSelector(selectors.get(0));
             case "test":
                 return new TestSelector(selectors);
             case "is":
                 return IsSelector.of(selectors);
+            case "in":
+                if (selectors.size() != 1) {
+                    throw new SelectorSyntaxException(
+                            "The :in function requires a single selector argument",
+                            input().toString(),
+                            functionPosition,
+                            line(),
+                            column());
+                }
+                return new InSelector(selectors.get(0));
+            case "root":
+                if (selectors.size() != 1) {
+                    throw new SelectorSyntaxException(
+                            "The :root function requires a single selector argument",
+                            input().toString(),
+                            functionPosition,
+                            line(),
+                            column());
+                }
+                InternalSelector root = new RootSelector(selectors.get(0), roots.size());
+                roots.add(selectors.get(0));
+                return root;
             case "topdown":
                 if (selectors.size() > 2) {
                     throw new SelectorSyntaxException(
                             "The :topdown function accepts 1 or 2 selectors, but found " + selectors.size(),
-                            expression(), functionPosition, line(), column());
+                            input().toString(),
+                            functionPosition,
+                            line(),
+                            column());
                 }
                 return new TopDownSelector(selectors);
+            case "recursive":
+                if (selectors.size() != 1) {
+                    throw new SelectorSyntaxException(
+                            "The :recursive function requires a single selector argument",
+                            input().toString(),
+                            functionPosition,
+                            line(),
+                            column());
+                }
+                return new RecursiveSelector(selectors.get(0));
             case "each":
-                LOGGER.warning("The `:each` selector function has been renamed to `:is`: " + expression());
+                LOGGER.warning("The `:each` selector function has been renamed to `:is`: " + input());
                 return IsSelector.of(selectors);
             default:
                 LOGGER.warning(String.format("Unknown function name `%s` found in selector: %s",
-                                             name, expression()));
-                return (context, shape, next) -> true;
+                        name,
+                        input()));
+                return (context, shape, next) -> InternalSelector.Response.CONTINUE;
         }
     }
 

@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.validation;
 
 import java.util.ArrayList;
@@ -38,6 +27,15 @@ public interface ValidatorFactory {
      * @return Returns the loaded validators.
      */
     List<Validator> loadBuiltinValidators();
+
+    /**
+     * Returns a list of decorators.
+     *
+     * @return Returns the loaded decorators.
+     */
+    default List<ValidationEventDecorator> loadDecorators() {
+        return Collections.emptyList();
+    }
 
     /**
      * Creates and configures a Validator by name.
@@ -86,6 +84,53 @@ public interface ValidatorFactory {
     }
 
     /**
+     * Creates a ValidatorFactory that uses a collection of built-in validators
+     * and a collection of ValidatorService instances for configurable validators.
+     *
+     * <p>The validators and services passed to this method are copied into a
+     * List before creating the actual factory to avoid holding on to
+     * {@code ServiceLoader} VM-wide instances that potentially utilize a
+     * Thread's context ClassLoader.
+     *
+     * @param validators Built-in validators to provide from the factory.
+     * @param services ValidatorService instances to use to create validators.
+     * @param decorators ValidationEventDecorator instances to use to create decorators.
+     * @return Returns the created ValidatorFactory.
+     */
+    static ValidatorFactory createServiceFactory(
+            Iterable<Validator> validators,
+            Iterable<ValidatorService> services,
+            Iterable<ValidationEventDecorator> decorators
+    ) {
+        List<ValidatorService> serviceList = new ArrayList<>();
+        services.forEach(serviceList::add);
+        List<Validator> validatorsList = new ArrayList<>();
+        validators.forEach(validatorsList::add);
+        List<ValidationEventDecorator> decoratorsList = new ArrayList<>();
+        decorators.forEach(decoratorsList::add);
+
+        return new ValidatorFactory() {
+            @Override
+            public List<Validator> loadBuiltinValidators() {
+                return Collections.unmodifiableList(validatorsList);
+            }
+
+            @Override
+            public List<ValidationEventDecorator> loadDecorators() {
+                return Collections.unmodifiableList(decoratorsList);
+            }
+
+            @Override
+            public Optional<Validator> createValidator(String name, ObjectNode configuration) {
+                return serviceList.stream()
+                        .filter(service -> service.getName().equals(name))
+                        .map(service -> service.createValidator(configuration))
+                        .findFirst();
+            }
+        };
+    }
+
+    /**
      * Creates a ValidatorFactory that discovers service providers using
      * the given ClassLoader.
      *
@@ -95,6 +140,7 @@ public interface ValidatorFactory {
     static ValidatorFactory createServiceFactory(ClassLoader classLoader) {
         return createServiceFactory(
                 ServiceLoader.load(Validator.class, classLoader),
-                ServiceLoader.load(ValidatorService.class, classLoader));
+                ServiceLoader.load(ValidatorService.class, classLoader),
+                ServiceLoader.load(ValidationEventDecorator.class, classLoader));
     }
 }

@@ -1,3 +1,7 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 package software.amazon.smithy.cli.commands;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -56,9 +60,24 @@ public class SelectCommandTest {
     @Test
     public void printsJsonVarsToStdout() throws Exception {
         String model = Paths.get(getClass().getResource("valid-model.smithy").toURI()).toString();
+        CliUtils.Result result = CliUtils.runSmithy("select",
+                "--selector",
+                "string $referenceMe(<)",
+                "--show",
+                "vars",
+                model);
+
+        assertThat(result.code(), equalTo(0));
+        validateSelectorOutput(result.stdout());
+    }
+
+    @Test
+    public void printsJsonVarsToStdoutWithDeprecatedVars() throws Exception {
+        String model = Paths.get(getClass().getResource("valid-model.smithy").toURI()).toString();
         CliUtils.Result result = CliUtils.runSmithy("select", "--selector", "string $referenceMe(<)", "--vars", model);
 
         assertThat(result.code(), equalTo(0));
+        assertThat(result.stderr(), containsString("--vars is deprecated"));
         validateSelectorOutput(result.stdout());
     }
 
@@ -70,7 +89,7 @@ public class SelectCommandTest {
         try {
             // Send the selector through input stream.
             System.setIn(new ByteArrayInputStream("string $referenceMe(<)".getBytes()));
-            CliUtils.Result result = CliUtils.runSmithy("select", "--vars", model);
+            CliUtils.Result result = CliUtils.runSmithy("select", "--show", "vars", model);
 
             assertThat(result.code(), equalTo(0));
             validateSelectorOutput(result.stdout());

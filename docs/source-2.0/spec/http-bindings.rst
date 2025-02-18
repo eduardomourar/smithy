@@ -14,7 +14,7 @@ and error structures are considered when serializing HTTP messages.
 
 .. important::
 
-    Violating :rfc`HTTP specifications <7230>` or relying on poorly-supported
+    Violating :rfc:`HTTP specifications <9110>` or relying on poorly-supported
     HTTP functionality when defining HTTP bindings will limit interoperability
     and likely lead to undefined behavior across Smithy implementations. For
     example, avoid defining GET/DELETE requests with payloads, defining
@@ -53,7 +53,7 @@ The ``http`` trait is a structure that supports the following members:
     * - code
       - ``integer``
       - The HTTP status code of a successful response. Defaults to ``200`` if
-        not provided. The provided value SHOULD be between 100 and 599, and
+        not provided. The provided value SHOULD be between 200 and 299, and
         it MUST be between 100 and 999. Status codes that do not allow a body
         like 204 and 205 SHOULD bind all output members to locations other than
         the body of the response.
@@ -107,9 +107,8 @@ method
 The ``method`` property defines the HTTP method of the operation (e.g., "GET",
 "PUT", "POST", "DELETE", "PATCH", etc). Smithy will use this value literally
 and will perform no validation on the method. The ``method`` value SHOULD
-match the ``operation`` production rule of :rfc:`7230#appendix-B`. This
-property does not influence the safety or idempotency characteristics of an
-operation.
+match one of the definitions found in :rfc:`9110#section-9.3`. This property
+does not influence the safety or idempotency characteristics of an operation.
 
 
 .. _http-uri:
@@ -118,7 +117,7 @@ uri
 ---
 
 The ``uri`` property defines the *request-target* of the operation in
-*origin-form* as defined in :rfc:`7230#section-5.3.1`. The URI is a simple
+*origin-form* as defined in :rfc:`9112#section-3.2.1`. The URI is a simple
 pattern that Smithy uses to match HTTP requests to operations and to bind
 components of the request URI to fields in the operations's input structure.
 :dfn:`Patterns` consist of literal characters that MUST be matched in the
@@ -351,8 +350,18 @@ Greedy labels
 
 A :dfn:`greedy label` is a label suffixed with the ``+`` qualifier that can be
 used to match more than one path segment. At most, one greedy label may exist
-in any path pattern, and if present, it MUST be the last label in the pattern.
+in any path pattern, and if present, it SHOULD be the last label in the pattern.
 Greedy labels MUST be bound to a string shape.
+
+.. important::
+
+    Servers implementing :ref:`Specificity Routing
+    <specificity-routing>` MAY support more than one greedy label and
+    not require it to be the last label in the pattern. The validation
+    events are therefore emitted as ``DANGER`` and can
+    suppressed. Most servers don't support having more than one greedy
+    label. Make sure that your server supports it and test that works
+    as expected before suppressing those events.
 
 Given a pattern of ``/my/uri/{label+}`` and an endpoint of ``http://yourhost``:
 
@@ -420,10 +429,9 @@ pattern of ``/prefix/{label+}/suffix`` and an endpoint of ``https://yourhost``:
 Pattern Validation and Conflict Avoidance
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Smithy validates the patterns within a service against each other to ensure
-that no two patterns conflict with each other for the same HTTP method. To
-prevent ambiguity when matching requests for different operations, the
-following rules are in place:
+Smithy validates the patterns within a service against each other to
+ensure that no two patterns conflict with each other for the same HTTP
+method. The following rules are in place:
 
 #. All labels MUST be delimited by '/' characters.
 
@@ -435,12 +443,12 @@ following rules are in place:
 #. At most, one greedy label MAY exist per pattern.
 
    - ``/{foo}/{bar+}`` is legal
-   - ``/{foo+}/{bar+}`` is illegal
+   - ``/{foo+}/bar/{baz+}`` is illegal
 
-#. If present, a greedy pattern MUST be the last label in a pattern.
+#. If present, a greedy pattern SHOULD be the last label in a pattern.
 
    - ``/{foo}/{bar+}`` is legal
-   - ``/{foo+}/{bar}`` is illegal
+   - ``/{foo+}/bar/{baz}`` is illegal
 
 #. Patterns MUST NOT be equivalent if they share a host.
 
@@ -448,28 +456,125 @@ following rules are in place:
    - Pattern ``/foo/{bar}`` and ``/foo/{baz}`` conflict regardless of any
      constraint traits on the label members.
 
-#. A label and a literal SHOULD NOT both occupy the same segment in patterns
-   which are equivalent to that point if they share a host.
+#. A label and a literal MAY both occupy the same segment in patterns
+   that are equivalent to that point if they share a host. Server
+   implementations MUST route ambiguous requests to the operation with
+   the most specific URI path (see :ref:`Specificity Routing <specificity-routing>`.)
 
-   - ``/foo/bar/{baz}`` and ``/foo/baz/bam`` can coexist.
-   - ``/foo/bar`` and ``/foo/{baz}/bam`` cannot coexist unless pattern
-     traits prevent ``{baz}`` from evaluating to ``bar`` because the label
-     occupies the same segment of another pattern with the same prefix.
+.. _specificity-routing:
 
-#. A query string literal with no value and a query string literal with an
-   empty value are considered equivalent. For example, ``/foo?baz`` and
-   ``/foo?baz=`` are considered the same route.
+Specificity Routing
+~~~~~~~~~~~~~~~~~~~
 
-#. Patterns MAY conflict if the operations use different hosts. Different hosts
-   can be configured using the :ref:`endpoint-trait`'s ``hostPrefix`` property.
+Specificity routing allows Smithy compliant servers to support
+ambiguous URI patterns and resolve requests at runtime. The algorithm
+chooses the *best-ranked* match using the specificity of the path and
+literal query parameters when present. The core of the algorithm can
+be loosely defined as “a path with a non-label segment is considered
+more specific than one with a label segment in the same
+position. Similarly a segment with a non-greedy label is considered
+more specific than a segment with a greedy label segment in the same
+position.”
 
-   - ``/foo/bar`` and ``/foo/{baz}/bam`` can coexist if one operation has no
-     endpoint trait and the other specifies ``foo.`` as the ``hostPrefix``.
-   - ``/foo/bar`` and ``/foo/{baz}/bam`` can coexist if one operation specifies
-     ``foo.`` as the ``hostPrefix`` and the other specifies ``bar.`` as the
-     ``hostPrefix``.
+The following algorithm is used to compare two paths
 
+Given two ambiguous URI patterns ``A`` and ``B`` with segments ``[A0,
+…, An]`` and ``[B0, …, Bm]`` with query string literals ``[AQ0, …,
+AQp]`` and ``[BQ0, …, BQq]`` (with both ``p`` and ``q`` possibly zero,
+i.e., without query string literals), the following steps are taken to
+compare them, for each index ``x`` from ``0`` to ``min(n, m)``
 
+#. If ``A[x]`` and ``B[x]`` are both literals then continue (the
+   literal values have to be equal otherwise the patterns are not
+   ambiguous)
+
+#. If ``A[x]`` is a literal and ``B[x]`` is a label then ``A`` is more
+   specific than ``B``,
+
+#. If ``A[x]`` is a non-greedy label and ``B[x]`` is a greedy label
+   then ``A`` is more specific than ``B``
+
+#. If ``n > m`` then ``A`` is more specific than ``B``
+
+#. if ``p > q`` then ``A`` is more specific than ``B``
+
+**Routing Example 1**
+
+Given a service with the following URI patterns for the same method
+
+#. ``/abc/bcd/{xyz}``
+#. ``/abc/{xyz}/cde`` 
+#. ``/{xyz}/bcd/cde``
+
+.. list-table::
+    :header-rows: 1
+    :widths: 30 10 60
+
+    * - Request URI
+      - Pattern Matched
+      - Reason
+    * - ``/abc/bcd/cde``
+      - Pattern 1
+      - Ambiguous with patterns 2 and 3. The literal ``bcd`` is more
+        specific than the label ``{xyz}``
+    * - ``/abc/foo/cde`` 
+      - Pattern 2 
+      - Ambiguous with pattern 3. The literal segment ``abc`` is more
+        specific than the label ``{xyz}``.
+    * - ``/foo/bcd/cde`` 
+      - Pattern 3
+      - Non-ambiguous.
+
+**Routing Example 2**
+
+Given a service with the following URI patterns for the same method
+
+#. ``/abc/bcd/{xyz}``
+#. ``/abc/{xyz}/cde``
+#. ``/{xyz}/bcd/cde?def=efg``
+
+.. list-table::
+    :header-rows: 1
+    :widths: 30 10 60
+
+    * - Request URI
+      - Pattern Matched
+      - Reason
+    * - ``/abc/bcd/cde?def=efg``
+      - Pattern 1
+      - Ambiguous with numbers 2 and 3. The literal segment ``abc`` is
+        more specific than the label ``{xyz}``. Notice that path
+        specificity wins over query string literals
+    * - ``/abc/foo/cde?def=efg``
+      - Pattern 2 
+      - Ambiguous with pattern 3. The literal segment ``abc`` is more
+        specific than the label ``{xyz}``.
+    * - ``/foo/bcd/cde?def=efg``
+      - Pattern 3
+      - Non-ambiguous.
+
+**Routing Example 3**
+
+Given a service with the following URI patterns for the same method
+
+#. ``/abc/{xyz+}/bcd``
+#. ``/abc/{xyz+}``
+
+.. list-table::
+    :header-rows: 1
+    :widths: 30 10 60
+
+    * - Request URI
+      - Pattern Matched
+      - Reason
+    * - ``/abc/foo/bar/bcd``
+      - Pattern 1
+      - Ambiguous with numbers 2. The literal segment ``bcd`` is
+        more specific than a non-segment.
+    * - ``/abc/foo/bar/baz``
+      - Pattern 2 
+      - Non-ambiguous.
+   
 .. smithy-trait:: smithy.api#httpError
 .. _httpError-trait:
 
@@ -487,7 +592,8 @@ Trait selector
     shapes that also have the :ref:`error-trait`.
 Value type
     ``integer`` value representing the HTTP response status code
-    (for example, ``404``).
+    (for example, ``404``). The provided value SHOULD be between 400 and 499
+    for "client" errors or between 500 and 599 for "server" errors.
 
 The following example defines an error with an HTTP status code of ``404``.
 
@@ -497,7 +603,8 @@ The following example defines an error with an HTTP status code of ``404``.
     @httpError(404)
     structure MyError {}
 
-.. rubric:: Default HTTP status codes
+Default HTTP status codes
+-------------------------
 
 The ``httpError`` trait is used to set a *custom* HTTP response status code.
 By default, error structures with no ``httpError`` trait use the default
@@ -526,9 +633,8 @@ Trait selector
     ``structure`` member that targets a list of these types.
 Value type
     ``string`` value defining a valid HTTP header field name according to
-    :rfc:`section 3.2 of RFC7230 <7230#section-3.2>`. The value MUST NOT be
-    empty and MUST be case-insensitively unique across all other members of
-    the structure.
+    :rfc:`9110#section-5.1`. The value MUST NOT be empty and MUST be
+    case-insensitively unique across all other members of the structure.
 Conflicts with
    :ref:`httpLabel-trait`,
    :ref:`httpQuery-trait`,
@@ -537,7 +643,8 @@ Conflicts with
    :ref:`httpPayload-trait`,
    :ref:`httpResponseCode-trait`
 
-.. rubric:: ``httpHeader`` serialization rules:
+``httpHeader`` serialization rules:
+-----------------------------------
 
 * When a :ref:`list <list>` shape is targeted, each member of the shape is
   serialized as a separate HTTP header either by concatenating the values
@@ -547,15 +654,21 @@ Conflicts with
 * ``string`` values with a :ref:`mediaType-trait` are always base64 encoded.
 * ``timestamp`` values are serialized using the ``http-date``
   format by default, as defined in the ``IMF-fixdate`` production of
-  :rfc:`7231#section-7.1.1.1`. The :ref:`timestampFormat-trait` MAY be used
+  :rfc:`9110#section-5.6.7`. The :ref:`timestampFormat-trait` MAY be used
   to use a custom serialization format.
 
-.. rubric:: Do not put too much data in HTTP headers
+.. note::
 
-While there is no limit placed on the length of an HTTP header field, many
-HTTP client and server implementations enforce limits in practice.
-Carefully consider the maximum allowed length of each member that is bound
-to an HTTP header.
+    While there is no limit placed on the length of an HTTP header field, many
+    HTTP client and server implementations enforce limits in practice.
+    Carefully consider the maximum allowed length of each member that is bound
+    to an HTTP header.
+
+.. note::
+
+    ``httpHeader`` is only considered when applied to top-level members of an
+    operation's input, output, or error structures. This trait has no meaning
+    in any other context and is simply ignored.
 
 
 .. _restricted-headers:
@@ -659,14 +772,16 @@ The following example defines an operation that send an HTTP label named
         foo: String
     }
 
-.. rubric:: Relationship to :ref:`http-trait`
+Relationship to :ref:`http-trait`
+---------------------------------
 
 When a structure is used as the input of an operation, any member of the
 structure with the ``httpLabel`` trait MUST have a corresponding
 :ref:`URI label <http-uri-label>` with the same name as the member.
 ``httpLabel`` traits are ignored when serializing operation output or errors.
 
-.. rubric:: Applying the ``httpLabel`` trait to members
+Applying the ``httpLabel`` trait to members
+-------------------------------------------
 
 * ``httpLabel`` can only be applied to structure members that are marked as
   :ref:`required <required-trait>`.
@@ -677,7 +792,8 @@ structure with the ``httpLabel`` trait MUST have a corresponding
 * If the corresponding URI label in the operation is greedy, then the
   ``httpLabel`` trait MUST target a member that targets a ``string`` shape.
 
-.. rubric:: ``httpLabel`` serialization rules:
+``httpLabel`` serialization rules
+---------------------------------
 
 - ``boolean`` values are serialized as ``true`` or ``false``.
 - ``timestamp`` values are serialized as an :rfc:`3339` string by default
@@ -690,14 +806,12 @@ structure with the ``httpLabel`` trait MUST have a corresponding
 - However, if the label is greedy, then "/" MUST NOT be percent-encoded
   because greedy labels are meant to span multiple path segments.
 
-.. rubric:: ``httpLabel`` is only used on input
+``httpLabel`` is only used on top-level input
+----------------------------------------------
 
-``httpLabel`` is ignored when resolving the HTTP bindings of an operation's
-output or an error. This means that if a structure that contains members
-marked with the ``httpLabel`` trait is used as the top-level output structure
-of an operation, then those members are sent as part of the
-:ref:`protocol-specific document <http-protocol-document-payloads>` sent in
-the body of the response.
+``httpLabel`` is only considered when applied to top-level members of an
+operation's input structure. This trait has no meaning in any other context and
+is simply ignored.
 
 
 .. smithy-trait:: smithy.api#httpPayload
@@ -709,14 +823,9 @@ the body of the response.
 Summary
     Binds a single structure member to the body of an HTTP message.
 Trait selector
-    .. code-block:: none
+    ``structure > member``
 
-        structure > :test(member > :test(string, blob, structure, union, document, list, map))
-
-    The ``httpPayload`` trait can be applied to ``structure`` members that
-    target a ``string``, ``blob``, ``structure``, ``union``, ``document``,
-    ``map``, or ``list``.
-
+    *Any structure member*
 Value type
     Annotation trait.
 Conflicts with
@@ -756,7 +865,8 @@ data in a response:
 
 .. _http-protocol-document-payloads:
 
-.. rubric:: Protocol-specific document payloads
+Protocol-specific document payloads
+-----------------------------------
 
 By default, all structure members that are not bound as part of the HTTP
 message are serialized in a protocol-specific document sent in the body of
@@ -765,7 +875,8 @@ bind a single top-level operation input, output, or error structure member to
 the body of the HTTP message. Multiple members of the same structure MUST NOT
 be bound to ``httpPayload``.
 
-.. rubric:: Binding members to ``httpPayload``
+Binding members to ``httpPayload``
+----------------------------------
 
 If the ``httpPayload`` trait is present on the structure referenced by the
 input of an operation, then all other structure members MUST be bound with
@@ -777,14 +888,20 @@ output of an operation or a structure targeted by the :ref:`error-trait`,
 then all other structure members MUST be bound to a :ref:`httpHeader-trait`
 or :ref:`httpPrefixHeaders-trait`.
 
-.. rubric:: Serialization rules
+Serialization rules
+-------------------
 
 #. When a string or blob member is referenced, the raw value is serialized
    as the body of the message.
-#. When a :ref:`structure <structure>`, :ref:`union <union>`, :ref:`list <list>`,
-   :ref:`map <map>`, or document type is targeted, the shape value is serialized
-   as a :ref:`protocol-specific <protocolDefinition-trait>` document that is sent
+#. When any other type of member is referenced, the shape value is serialized
+   as a :ref:`protocol-specific <protocolDefinition-trait>` value that is sent
    as the body of the message.
+
+.. note::
+
+    ``httpPayload`` is only considered when applied to top-level members of an
+    operation's input, output, or error structures. This trait has no meaning
+    in any other context and is simply ignored.
 
 
 .. smithy-trait:: smithy.api#httpPrefixHeaders
@@ -858,13 +975,20 @@ An example HTTP request would be serialized as:
     X-Foo-first: hi
     X-Foo-second: there
 
-.. rubric:: Disambiguation of ``httpPrefixHeaders``
+Disambiguation of ``httpPrefixHeaders``
+---------------------------------------
 
 In order to differentiate ``httpPrefixHeaders`` from other headers, when
 ``httpPrefixHeaders`` are used, no other :ref:`httpHeader-trait` bindings can
 start with the same prefix provided in ``httpPrefixHeaders`` trait. If
 ``httpPrefixHeaders`` is set to an empty string, then no other members can be
 bound to ``headers``.
+
+.. note::
+
+    ``httpPrefixHeaders`` is only considered when applied to top-level members
+    of an operation's input, output, or error structures. This trait has no
+    meaning in any other context and is simply ignored.
 
 
 .. smithy-trait:: smithy.api#httpQuery
@@ -919,7 +1043,8 @@ request:
         size: Integer
     }
 
-.. rubric:: Serialization rules
+Serialization rules
+-------------------
 
 * "&" is used to separate query string parameter key-value pairs.
 * "=" is used to separate query string parameter names from values.
@@ -952,21 +1077,20 @@ request:
     HTTP requests and automatically percent-decoded when deserializing HTTP
     requests.
 
-.. rubric:: ``httpQuery`` is only used on input
+``httpQuery`` is only used on top-level input
+----------------------------------------------
 
-``httpQuery`` is ignored when resolving the HTTP bindings of an operation's
-output or an error. This means that if a structure that contains members
-marked with the ``httpQuery`` trait is used as the top-level output structure
-of an operation, then those members are sent as part of the
-:ref:`protocol-specific document <http-protocol-document-payloads>` sent in
-the body of the response.
+``httpQuery`` is only considered when applied to top-level members of an
+operation's input structure. This trait has no meaning in any other context and
+is simply ignored.
 
-.. rubric:: Do not put too much data in the query string
+.. note::
 
-While there is no limit placed on the length of an
-:rfc:`HTTP request line <7230#section-3.1.1>`, many HTTP client and server
-implementations enforce limits in practice. Carefully consider the maximum
-allowed length of each member that is bound to an HTTP query string or path.
+    While there is no limit placed on the length of an
+    :rfc:`HTTP request line <9112#section-3>`, many HTTP client and server
+    implementations enforce limits in practice. Carefully consider the maximum
+    allowed length of each member that is bound to an HTTP query string or
+    path.
 
 
 .. smithy-trait:: smithy.api#httpQueryParams
@@ -1019,16 +1143,8 @@ target input map as query string parameters in an HTTP request:
         value: String
     }
 
-.. rubric:: ``httpQueryParams`` is only used on input
-
-``httpQueryParams`` is ignored when resolving the HTTP bindings of an operation's
-output or an error. This means that if a structure that contains members
-marked with the ``httpQueryParams`` trait is used as the top-level output structure
-of an operation, then those members are sent as part of the
-:ref:`protocol-specific document <http-protocol-document-payloads>` sent in
-the body of the response.
-
-.. rubric:: Serialization rules
+Serialization rules
+-------------------
 
 See the :ref:`httpQuery-trait` serialization rules that define how the keys and values of the
 target map will be serialized in the request query string. Key-value pairs in the target map
@@ -1128,6 +1244,13 @@ A server should deserialize the following input structure:
         }
     }
 
+``httpQueryParams`` is only used on top-level input
+----------------------------------------------------
+
+``httpQueryParams`` is only considered when applied to top-level members of an
+operation's input structure. This trait has no meaning in any other context and
+is simply ignored.
+
 .. smithy-trait:: smithy.api#httpResponseCode
 .. _httpResponseCode-trait:
 
@@ -1153,21 +1276,21 @@ Conflicts with
    :ref:`httpPrefixHeaders-trait`, :ref:`httpPayload-trait`,
    :ref:`httpQuery-trait`, :ref:`httpQueryParams-trait`,
 
-.. rubric:: ``httpResponseCode`` use cases
+``httpResponseCode`` use cases
+------------------------------
 
 Marking an output ``structure`` member with this trait can be used to provide
 different response codes for an operation, like a 200 or 201 for a PUT
-operation. If this member isn't provided, server implementations MUST default
-to the `code` set by the :ref:`http-trait`.
+operation. The value for this member SHOULD be between 200 and 299, inclusive.
+If this member isn't provided, server implementations MUST default to the
+`code` set by the :ref:`http-trait`.
 
-.. rubric:: ``httpResponseCode`` is only used on output
+``httpResponseCode`` is only used on top-level output
+-----------------------------------------------------
 
-``httpResponseCode`` is ignored when resolving the HTTP bindings of any
-structure except an operation's output structure. This means that if a
-structure that contains members marked with the ``httpResponseCode`` trait
-is not used as an output structure of an operation, then those members are
-sent as part of the :ref:`protocol-specific document <http-protocol-document-payloads>`
-sent in the body of the request.
+``httpResponseCode`` is only considered when applied to top-level members of an
+operation's output structure. This trait has no meaning in any other context
+and is simply ignored.
 
 
 .. smithy-trait:: smithy.api#cors

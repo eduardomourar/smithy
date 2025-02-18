@@ -3,13 +3,16 @@ $version: "2.0"
 namespace aws.protocoltests.restjson
 
 use aws.api#service
+use aws.auth#sigv4
 use aws.protocols#restJson1
 use smithy.test#httpRequestTests
 use smithy.test#httpResponseTests
 
 /// A REST JSON service that sends JSON requests and responses.
 @service(sdkId: "Rest Json Protocol")
+@sigv4(name: "restjson")
 @restJson1
+@title("Sample Rest Json Protocol Service")
 service RestJson {
     version: "2019-12-16",
     // Ensure that generators are able to handle renames.
@@ -58,9 +61,12 @@ service RestJson {
         HttpPayloadWithStructure,
         HttpEnumPayload,
         HttpStringPayload,
+        HttpPayloadWithUnion,
 
         // @httpResponseCode tests
         HttpResponseCode,
+        ResponseCodeRequired
+        ResponseCodeHttpFallback
 
         // @streaming tests
         StreamingTraits,
@@ -77,12 +83,15 @@ service RestJson {
         JsonIntEnums,
         RecursiveShapes,
         JsonLists,
+        SparseJsonLists,
         JsonMaps,
+        SparseJsonMaps,
         JsonBlobs,
 
         // Documents
         DocumentType,
         DocumentTypeAsPayload,
+        DocumentTypeAsMapValue,
 
         // Unions
         JsonUnions,
@@ -126,6 +135,7 @@ service RestJson {
         MalformedTimestampBodyDateTime,
         MalformedTimestampBodyHttpDate,
         MalformedContentTypeWithoutBody,
+        MalformedContentTypeWithoutBodyEmptyInput
         MalformedContentTypeWithBody,
         MalformedContentTypeWithPayload,
         MalformedContentTypeWithGenericString,
@@ -137,10 +147,23 @@ service RestJson {
         TestBodyStructure,
         TestPayloadStructure,
         TestPayloadBlob,
-        TestNoPayload,
+        TestGetNoPayload
+        TestPostNoPayload,
+        TestGetNoInputNoPayload,
+        TestPostNoInputNoPayload,
 
         // client-only timestamp parsing tests
         DatetimeOffsets,
         FractionalSeconds,
+
+        // requestCompression trait tests
+        PutWithContentEncoding,
+
+        // Content-Type header tests
+        ContentTypeParameters,
+
+        // defaults
+        OperationWithDefaults
+        OperationWithNestedStructure
     ]
 }

@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.validation;
 
 import java.util.Collection;
@@ -121,11 +110,11 @@ public final class ValidatedResult<T> {
     }
 
     /**
-     * Get the result, but throw if there are any ERROR events or if the
+     * Get the result, but throw if there are any ERROR or DANGER events or if the
      * result is empty.
      *
      * @return Returns the result.
-     * @throws ValidatedResultException if there are any ERROR events.
+     * @throws ValidatedResultException if there are any ERROR or DANGER events.
      * @throws IllegalStateException if there is no result.
      */
     public T unwrap() {

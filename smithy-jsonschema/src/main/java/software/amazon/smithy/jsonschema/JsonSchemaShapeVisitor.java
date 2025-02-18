@@ -1,27 +1,19 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.jsonschema;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.node.Node.NonNumericFloat;
+import software.amazon.smithy.model.node.StringNode;
 import software.amazon.smithy.model.shapes.BigDecimalShape;
 import software.amazon.smithy.model.shapes.BigIntegerShape;
 import software.amazon.smithy.model.shapes.BlobShape;
@@ -29,6 +21,7 @@ import software.amazon.smithy.model.shapes.BooleanShape;
 import software.amazon.smithy.model.shapes.ByteShape;
 import software.amazon.smithy.model.shapes.DocumentShape;
 import software.amazon.smithy.model.shapes.DoubleShape;
+import software.amazon.smithy.model.shapes.EnumShape;
 import software.amazon.smithy.model.shapes.FloatShape;
 import software.amazon.smithy.model.shapes.IntegerShape;
 import software.amazon.smithy.model.shapes.ListShape;
@@ -43,6 +36,7 @@ import software.amazon.smithy.model.shapes.StructureShape;
 import software.amazon.smithy.model.shapes.TimestampShape;
 import software.amazon.smithy.model.shapes.UnionShape;
 import software.amazon.smithy.model.traits.DefaultTrait;
+import software.amazon.smithy.model.traits.DeprecatedTrait;
 import software.amazon.smithy.model.traits.DocumentationTrait;
 import software.amazon.smithy.model.traits.EnumTrait;
 import software.amazon.smithy.model.traits.LengthTrait;
@@ -100,9 +94,21 @@ final class JsonSchemaShapeVisitor extends ShapeVisitor.Default<Schema> {
         if (converter.isInlined(member)) {
             return member.accept(this);
         } else {
-            Schema.Builder builder = Schema.builder().ref(converter.toPointer(member.getTarget()));
-            member.getTrait(DefaultTrait.class).ifPresent(trait -> builder.defaultValue(trait.toNode()));
-            return builder.build();
+            Schema.Builder refBuilder = Schema.builder().ref(converter.toPointer(member.getTarget()));
+            if (member.hasTrait(DeprecatedTrait.class) && getJsonSchemaVersion() != JsonSchemaVersion.DRAFT07) {
+                refBuilder.deprecated(true);
+            }
+
+            if (converter.getConfig().getAddReferenceDescriptions()) {
+                descriptionMessage(member).ifPresent(refBuilder::description);
+            }
+
+            // Wrap the ref and default in an allOf if disableDefaultValues has been not been disabled on config.
+            if (member.hasTrait(DefaultTrait.class) && !converter.getConfig().getDisableDefaultValues()) {
+                Schema def = Schema.builder().defaultValue(member.expectTrait(DefaultTrait.class).toNode()).build();
+                return Schema.builder().allOf(ListUtils.of(refBuilder.build(), def)).build();
+            }
+            return refBuilder.build();
         }
     }
 
@@ -112,16 +118,19 @@ final class JsonSchemaShapeVisitor extends ShapeVisitor.Default<Schema> {
 
         switch (mapStrategy) {
             case PROPERTY_NAMES:
-                return buildSchema(shape, createBuilder(shape, "object")
-                        .propertyNames(createRef(shape.getKey()))
-                        .additionalProperties(createRef(shape.getValue())));
+                return buildSchema(shape,
+                        createBuilder(shape, "object")
+                                .propertyNames(createRef(shape.getKey()))
+                                .additionalProperties(createRef(shape.getValue())));
             case PATTERN_PROPERTIES:
-                String keyPattern = shape.getKey().getMemberTrait(model, PatternTrait.class)
+                String keyPattern = shape.getKey()
+                        .getMemberTrait(model, PatternTrait.class)
                         .map(PatternTrait::getPattern)
                         .map(Pattern::pattern)
                         .orElse(".+");
-                return buildSchema(shape, createBuilder(shape, "object")
-                        .putPatternProperty(keyPattern, createRef(shape.getValue())));
+                return buildSchema(shape,
+                        createBuilder(shape, "object")
+                                .putPatternProperty(keyPattern, createRef(shape.getValue())));
             default:
                 throw new SmithyJsonSchemaException(String.format("Unsupported map strategy: %s", mapStrategy));
         }
@@ -243,6 +252,43 @@ final class JsonSchemaShapeVisitor extends ShapeVisitor.Default<Schema> {
     }
 
     @Override
+    public Schema enumShape(EnumShape shape) {
+        JsonSchemaConfig.EnumStrategy enumStrategy = converter.getConfig().getEnumStrategy();
+
+        switch (enumStrategy) {
+            case ENUM:
+                return super.enumShape(shape);
+            case ONE_OF:
+                Map<String, String> enumValues = shape.getEnumValues();
+                List<Schema> schemas = new ArrayList<>();
+
+                for (Map.Entry<String, MemberShape> entry : shape.getAllMembers().entrySet()) {
+                    String memberName = entry.getKey();
+                    MemberShape member = entry.getValue();
+                    Schema enumSchema = Schema.builder()
+                            .constValue(StringNode.from(enumValues.get(memberName)))
+                            .description(member.getTrait(DocumentationTrait.class)
+                                    .map(DocumentationTrait::getValue)
+                                    .orElse(null))
+                            .build();
+
+                    schemas.add(enumSchema);
+                }
+
+                return buildSchema(shape,
+                        Schema.builder()
+                                .description(shape.getTrait(DocumentationTrait.class)
+                                        .map(DocumentationTrait::getValue)
+                                        .orElse(null))
+                                .type("string")
+                                .oneOf(schemas));
+            default: {
+                throw new SmithyJsonSchemaException(String.format("Unsupported enum strategy: %s", enumStrategy));
+            }
+        }
+    }
+
+    @Override
     public Schema timestampShape(TimestampShape shape) {
         return buildSchema(shape, createBuilder(shape, "string"));
     }
@@ -270,9 +316,7 @@ final class JsonSchemaShapeVisitor extends ShapeVisitor.Default<Schema> {
      * @return Returns the updated schema builder.
      */
     private Schema.Builder updateBuilder(Shape shape, Schema.Builder builder) {
-        shape.getMemberTrait(model, DocumentationTrait.class)
-                .map(DocumentationTrait::getValue)
-                .ifPresent(builder::description);
+        descriptionMessage(shape).ifPresent(builder::description);
 
         shape.getTrait(TitleTrait.class)
                 .map(TitleTrait::getValue)
@@ -317,10 +361,33 @@ final class JsonSchemaShapeVisitor extends ShapeVisitor.Default<Schema> {
                 .map(EnumTrait::getEnumDefinitionValues)
                 .ifPresent(builder::enumValues);
 
-        shape.getTrait(DefaultTrait.class)
-                .ifPresent(trait -> builder.defaultValue(trait.toNode()));
+        if (shape.isIntEnumShape() && !converter.getConfig().getDisableIntEnums()) {
+            builder.intEnumValues(shape.asIntEnumShape().get().getEnumValues().values());
+        }
+
+        if (shape.hasTrait(DefaultTrait.class) && !converter.getConfig().getDisableDefaultValues()) {
+            builder.defaultValue(shape.expectTrait(DefaultTrait.class).toNode());
+        }
+
+        if (shape.hasTrait(DeprecatedTrait.class) && getJsonSchemaVersion() != JsonSchemaVersion.DRAFT07) {
+            builder.deprecated(true);
+        }
 
         return builder;
+    }
+
+    private Optional<String> descriptionMessage(Shape shape) {
+        StringBuilder builder = new StringBuilder();
+        shape
+                .getTrait(DocumentationTrait.class)
+                .ifPresent(trait -> builder.append(trait.getValue()));
+        shape
+                .getTrait(DeprecatedTrait.class)
+                .ifPresent(trait -> builder
+                        .append("\n")
+                        .append(trait.getDeprecatedDescription(shape.getType())));
+        String description = builder.toString().trim();
+        return description.isEmpty() ? Optional.empty() : Optional.of(description);
     }
 
     /**
@@ -335,10 +402,15 @@ final class JsonSchemaShapeVisitor extends ShapeVisitor.Default<Schema> {
      * @return Returns the built schema.
      */
     private Schema buildSchema(Shape shape, Schema.Builder builder) {
+        JsonSchemaMapperContext context = new JsonSchemaMapperContext(model, shape, converter.getConfig());
         for (JsonSchemaMapper mapper : mappers) {
-            mapper.updateSchema(shape, builder, converter.getConfig());
+            builder = mapper.updateSchema(context, builder);
         }
 
         return builder.build();
+    }
+
+    private JsonSchemaVersion getJsonSchemaVersion() {
+        return converter.getConfig().getJsonSchemaVersion();
     }
 }

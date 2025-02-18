@@ -1,18 +1,7 @@
 /*
- * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.loader;
 
 import software.amazon.smithy.utils.SimpleParser;
@@ -46,13 +35,13 @@ public final class ParserUtils {
             }
         }
 
-        parser.consumeUntilNoLongerMatches(ParserUtils::isDigit);
+        parser.consumeWhile(ParserUtils::isDigit);
 
         // Consume decimals.
         char peek = parser.peek();
         if (peek == '.') {
             parser.skip();
-            if (parser.consumeUntilNoLongerMatches(ParserUtils::isDigit) == 0) {
+            if (parser.consumeWhile(ParserUtils::isDigit) == 0) {
                 throw parser.syntax(createInvalidString(parser, startPosition, "'.' must be followed by a digit"));
             }
         }
@@ -65,7 +54,7 @@ public final class ParserUtils {
             if (peek == '+' || peek == '-') {
                 parser.skip();
             }
-            if (parser.consumeUntilNoLongerMatches(ParserUtils::isDigit) == 0) {
+            if (parser.consumeWhile(ParserUtils::isDigit) == 0) {
                 throw parser.syntax(
                         createInvalidString(parser, startPosition, "'e', '+', and '-' must be followed by a digit"));
             }
@@ -158,7 +147,7 @@ public final class ParserUtils {
         // Parse identifier_start
         char c = parser.peek();
         if (c == '_') {
-            parser.consumeUntilNoLongerMatches(next -> next == '_');
+            parser.consumeWhile(next -> next == '_');
             if (!ParserUtils.isValidIdentifierCharacter(parser.peek())) {
                 throw invalidIdentifier(parser);
             }
@@ -170,12 +159,12 @@ public final class ParserUtils {
         parser.skip();
 
         // Parse identifier_chars
-        parser.consumeUntilNoLongerMatches(ParserUtils::isValidIdentifierCharacter);
+        parser.consumeWhile(ParserUtils::isValidIdentifierCharacter);
     }
 
     private static RuntimeException invalidIdentifier(SimpleParser parser) {
         throw parser.syntax("Expected a valid identifier character, but found '"
-                            + parser.peekSingleCharForMessage() + '\'');
+                + parser.peekSingleCharForMessage() + '\'');
     }
 
     /**
@@ -185,6 +174,16 @@ public final class ParserUtils {
      * @return Returns true if the character is allowed in an identifier.
      */
     public static boolean isValidIdentifierCharacter(char c) {
+        return isValidIdentifierCharacter((int) c);
+    }
+
+    /**
+     * Returns true if the given character is allowed in an identifier.
+     *
+     * @param c Character to check.
+     * @return Returns true if the character is allowed in an identifier.
+     */
+    public static boolean isValidIdentifierCharacter(int c) {
         return isIdentifierStart(c) || isDigit(c);
     }
 
@@ -195,7 +194,17 @@ public final class ParserUtils {
      * @return Returns true if the character can start an identifier.
      */
     public static boolean isIdentifierStart(char c) {
-        return c == '_' ||  isAlphabetic(c);
+        return isIdentifierStart((int) c);
+    }
+
+    /**
+     * Returns true if the given character is allowed to start an identifier.
+     *
+     * @param c Character to check.
+     * @return Returns true if the character can start an identifier.
+     */
+    public static boolean isIdentifierStart(int c) {
+        return c == '_' || isAlphabetic(c);
     }
 
     /**
@@ -205,6 +214,16 @@ public final class ParserUtils {
      * @return Returns true if the character is a digit.
      */
     public static boolean isDigit(char c) {
+        return isDigit((int) c);
+    }
+
+    /**
+     * Returns true if the given value is a digit 0-9.
+     *
+     * @param c Character to check.
+     * @return Returns true if the character is a digit.
+     */
+    public static boolean isDigit(int c) {
         return c >= '0' && c <= '9';
     }
 
@@ -216,6 +235,17 @@ public final class ParserUtils {
      * @return Returns true if the character is an alphabetic character.
      */
     public static boolean isAlphabetic(char c) {
+        return isAlphabetic((int) c);
+    }
+
+    /**
+     * Returns true if the given character is an alphabetic character
+     * A-Z, a-z. This is a stricter version of {@link Character#isAlphabetic}.
+     *
+     * @param c Character to check.
+     * @return Returns true if the character is an alphabetic character.
+     */
+    public static boolean isAlphabetic(int c) {
         return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
     }
 }

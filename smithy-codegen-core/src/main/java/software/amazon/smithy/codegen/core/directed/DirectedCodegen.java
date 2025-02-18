@@ -1,18 +1,7 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.codegen.core.directed;
 
 import software.amazon.smithy.codegen.core.CodegenContext;
@@ -67,6 +56,15 @@ public interface DirectedCodegen<C extends CodegenContext<S, ?, I>, S, I extends
     }
 
     /**
+     * Generates the code needed for an operation shape.
+     *
+     * @param directive Directive to perform.
+     */
+    default void generateOperation(GenerateOperationDirective<C, S> directive) {
+        // Does nothing by default.
+    }
+
+    /**
      * Generates the code needed for a structure shape.
      *
      * <p>This method should not be invoked for structures marked with the
@@ -89,6 +87,20 @@ public interface DirectedCodegen<C extends CodegenContext<S, ?, I>, S, I extends
      * @param directive Directive to perform.
      */
     void generateUnion(GenerateUnionDirective<C, S> directive);
+
+    /**
+     * Generates any code needed for a list shape.
+     *
+     * @param directive Directive to perform.
+     */
+    default void generateList(GenerateListDirective<C, S> directive) {}
+
+    /**
+     * Generates any code needed for a map shape.
+     *
+     * @param directive Directive to perform.
+     */
+    default void generateMap(GenerateMapDirective<C, S> directive) {}
 
     /**
      * Generates the code needed for an enum shape, whether it's a string shape

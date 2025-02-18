@@ -1,3 +1,7 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 package software.amazon.smithy.build;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -81,5 +85,17 @@ public class PluginContextTest {
         assertThat(context.getFileManifest(), is(context2.getFileManifest()));
         assertThat(context.getSources(), equalTo(context2.getSources()));
         assertThat(context.getEvents(), equalTo(context2.getEvents()));
+    }
+
+    @Test
+    public void roundTripsDefaults() {
+        PluginContext before = PluginContext.builder()
+                .model(Model.builder().build())
+                .fileManifest(new MockManifest())
+                .build();
+        PluginContext after = before.toBuilder().build();
+        assertThat(before.getModel(), equalTo(after.getModel()));
+        assertThat(before.getFileManifest(), equalTo(after.getFileManifest()));
+        assertThat(before.getProjectionName(), equalTo(after.getProjectionName()));
     }
 }

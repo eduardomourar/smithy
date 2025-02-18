@@ -1,22 +1,14 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.validation;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -53,10 +45,8 @@ import software.amazon.smithy.model.shapes.TimestampShape;
 import software.amazon.smithy.model.shapes.UnionShape;
 import software.amazon.smithy.model.validation.node.NodeValidatorPlugin;
 import software.amazon.smithy.model.validation.node.TimestampValidationStrategy;
-import software.amazon.smithy.utils.BuilderRef;
 import software.amazon.smithy.utils.ListUtils;
 import software.amazon.smithy.utils.SmithyBuilder;
-import software.amazon.smithy.utils.SmithyInternalApi;
 
 /**
  * Validates {@link Node} values provided for {@link Shape} definitions.
@@ -74,7 +64,6 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
 
     private final Model model;
     private final TimestampValidationStrategy timestampValidationStrategy;
-    private final boolean allowOptionalNull;
     private String eventId;
     private Node value;
     private ShapeId eventShapeId;
@@ -85,9 +74,8 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
     private NodeValidationVisitor(Builder builder) {
         this.model = SmithyBuilder.requiredState("model", builder.model);
         this.nullableIndex = NullableIndex.of(model);
-        this.validationContext = new NodeValidatorPlugin.Context(model, builder.features.copy());
+        this.validationContext = new NodeValidatorPlugin.Context(model, Feature.enumSet(builder.features));
         this.timestampValidationStrategy = builder.timestampValidationStrategy;
-        this.allowOptionalNull = builder.allowOptionalNull;
         setValue(SmithyBuilder.requiredState("value", builder.value));
         setStartingContext(builder.contextText);
         setValue(builder.value);
@@ -98,16 +86,39 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
     /**
      * Features to use when validating.
      */
-    // TODO Move other features here like allowOptionalNull.
     public enum Feature {
         /**
          * Emit a warning when a range trait is incompatible with a default value of 0.
          *
          * <p>This was a common pattern in Smithy 1.0 and earlier. It implies that the value is effectively
-         * required. However, chaning the type of the value by un-boxing it or adjusting the range trait would
-         * be a lossy tranformation when migrating a model from 1.0 to 2.0.
+         * required. However, changing the type of the value by un-boxing it or adjusting the range trait would
+         * be a lossy transformation when migrating a model from 1.0 to 2.0.
          */
-        RANGE_TRAIT_ZERO_VALUE_WARNING
+        RANGE_TRAIT_ZERO_VALUE_WARNING,
+
+        /**
+         * Lowers severity of constraint trait validations to WARNING.
+         */
+        ALLOW_CONSTRAINT_ERRORS,
+
+        /**
+         * Allows null values to be provided for an optional structure member.
+         *
+         * <p>By default, null values are not allowed for optional types.
+         */
+        ALLOW_OPTIONAL_NULLS;
+
+        public static Feature fromNode(Node node) {
+            return Feature.valueOf(node.expectStringNode().getValue());
+        }
+
+        public static Node toNode(Feature feature) {
+            return StringNode.from(feature.toString());
+        }
+
+        private static EnumSet<Feature> enumSet(Collection<Feature> features) {
+            return features.isEmpty() ? EnumSet.noneOf(Feature.class) : EnumSet.copyOf(features);
+        }
     }
 
     public static Builder builder() {
@@ -158,7 +169,6 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
         builder.model(model);
         builder.startingContext(startingContext.isEmpty() ? segment : (startingContext + "." + segment));
         builder.timestampValidationStrategy(timestampValidationStrategy);
-        builder.allowOptionalNull(allowOptionalNull);
         NodeValidationVisitor visitor = new NodeValidationVisitor(builder);
         // Use the same validation context.
         visitor.validationContext = this.validationContext;
@@ -175,8 +185,8 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
     @Override
     public List<ValidationEvent> booleanShape(BooleanShape shape) {
         return value.isBooleanNode()
-               ? applyPlugins(shape)
-               : invalidShape(shape, NodeType.BOOLEAN);
+                ? applyPlugins(shape)
+                : invalidShape(shape, NodeType.BOOLEAN);
     }
 
     @Override
@@ -207,19 +217,27 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
     private List<ValidationEvent> validateNaturalNumber(Shape shape, Long min, Long max) {
         return value.asNumberNode()
                 .map(number -> {
-                    if (!number.isNaturalNumber()) {
+                    if (number.isFloatingPointNumber()) {
                         return ListUtils.of(event(String.format(
                                 "%s shapes must not have floating point values, but found `%s` provided for `%s`",
-                                shape.getType(), number.getValue(), shape.getId())));
+                                shape.getType(),
+                                number.getValue(),
+                                shape.getId())));
                     }
 
                     Long numberValue = number.getValue().longValue();
                     if (min != null && numberValue < min) {
                         return ListUtils.of(event(String.format(
-                                "%s value must be > %d, but found %d", shape.getType(), min, numberValue)));
+                                "%s value must be > %d, but found %d",
+                                shape.getType(),
+                                min,
+                                numberValue)));
                     } else if (max != null && numberValue > max) {
                         return ListUtils.of(event(String.format(
-                                "%s value must be < %d, but found %d", shape.getType(), max, numberValue)));
+                                "%s value must be < %d, but found %d",
+                                shape.getType(),
+                                max,
+                                numberValue)));
                     } else {
                         return applyPlugins(shape);
                     }
@@ -230,8 +248,8 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
     @Override
     public List<ValidationEvent> floatShape(FloatShape shape) {
         return value.isNumberNode() || value.isStringNode()
-               ? applyPlugins(shape)
-               : invalidShape(shape, NodeType.NUMBER);
+                ? applyPlugins(shape)
+                : invalidShape(shape, NodeType.NUMBER);
     }
 
     @Override
@@ -243,15 +261,15 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
     @Override
     public List<ValidationEvent> doubleShape(DoubleShape shape) {
         return value.isNumberNode() || value.isStringNode()
-               ? applyPlugins(shape)
-               : invalidShape(shape, NodeType.NUMBER);
+                ? applyPlugins(shape)
+                : invalidShape(shape, NodeType.NUMBER);
     }
 
     @Override
     public List<ValidationEvent> bigDecimalShape(BigDecimalShape shape) {
         return value.isNumberNode()
-               ? applyPlugins(shape)
-               : invalidShape(shape, NodeType.NUMBER);
+                ? applyPlugins(shape)
+                : invalidShape(shape, NodeType.NUMBER);
     }
 
     @Override
@@ -308,7 +326,9 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
                         Node entryValue = entry.getValue();
                         if (!members.containsKey(entryKey)) {
                             String message = String.format(
-                                    "Invalid structure member `%s` found for `%s`", entryKey, shape.getId());
+                                    "Invalid structure member `%s` found for `%s`",
+                                    entryKey,
+                                    shape.getId());
                             events.add(event(message, Severity.WARNING, shape.getId().toString(), entryKey));
                         } else {
                             events.addAll(traverse(entryKey, entryValue).memberShape(members.get(entryKey)));
@@ -317,9 +337,13 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
 
                     for (MemberShape member : members.values()) {
                         if (member.isRequired() && !object.getMember(member.getMemberName()).isPresent()) {
+                            Severity severity = this.validationContext.hasFeature(Feature.ALLOW_CONSTRAINT_ERRORS)
+                                    ? Severity.WARNING
+                                    : Severity.ERROR;
                             events.add(event(String.format(
                                     "Missing required structure member `%s` for `%s`",
-                                    member.getMemberName(), shape.getId())));
+                                    member.getMemberName(),
+                                    shape.getId()), severity));
                         }
                     }
                     return events;
@@ -341,7 +365,9 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
                             Node entryValue = entry.getValue();
                             if (!members.containsKey(entryKey)) {
                                 events.add(event(String.format(
-                                        "Invalid union member `%s` found for `%s`", entryKey, shape.getId())));
+                                        "Invalid union member `%s` found for `%s`",
+                                        entryKey,
+                                        shape.getId())));
                             } else {
                                 events.addAll(traverse(entryKey, entryValue).memberShape(members.get(entryKey)));
                             }
@@ -355,10 +381,42 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
     @Override
     public List<ValidationEvent> memberShape(MemberShape shape) {
         List<ValidationEvent> events = applyPlugins(shape);
-        events.addAll(model.getShape(shape.getTarget())
-                              .map(member -> member.accept(this))
-                              .orElse(ListUtils.of()));
+        if (value.isNullNode()) {
+            events.addAll(checkNullMember(shape));
+        }
+        model.getShape(shape.getTarget()).ifPresent(target -> {
+            // We only need to keep track of a single referring member, so a stack of members or anything like that
+            // isn't needed here.
+            validationContext.setReferringMember(shape);
+            events.addAll(target.accept(this));
+            validationContext.setReferringMember(null);
+        });
         return events;
+    }
+
+    public List<ValidationEvent> checkNullMember(MemberShape shape) {
+        if (!nullableIndex.isMemberNullable(shape)) {
+            switch (model.expectShape(shape.getContainer()).getType()) {
+                case LIST:
+                    return ListUtils.of(event(
+                            String.format(
+                                    "Non-sparse list shape `%s` cannot contain null values",
+                                    shape.getContainer())));
+                case MAP:
+                    return ListUtils.of(event(
+                            String.format(
+                                    "Non-sparse map shape `%s` cannot contain null values",
+                                    shape.getContainer())));
+                case STRUCTURE:
+                    return ListUtils.of(event(
+                            String.format("Required structure member `%s` for `%s` cannot be null",
+                                    shape.getMemberName(),
+                                    shape.getContainer())));
+                default:
+                    break;
+            }
+        }
+        return ListUtils.of();
     }
 
     @Override
@@ -378,7 +436,7 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
 
     private List<ValidationEvent> invalidShape(Shape shape, NodeType expectedType) {
         // Nullable shapes allow null values.
-        if (allowOptionalNull && value.isNullNode()) {
+        if (value.isNullNode() && validationContext.hasFeature(Feature.ALLOW_OPTIONAL_NULLS)) {
             // Non-members are nullable. Members are nullable based on context.
             if (!shape.isMemberShape() || shape.asMemberShape().filter(nullableIndex::isMemberNullable).isPresent()) {
                 return Collections.emptyList();
@@ -387,7 +445,10 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
 
         String message = String.format(
                 "Expected %s value for %s shape, `%s`; found %s value",
-                expectedType, shape.getType(), shape.getId(), value.getType());
+                expectedType,
+                shape.getType(),
+                shape.getId(),
+                value.getType());
         if (value.isStringNode()) {
             message += ", `" + value.expectStringNode().getValue() + "`";
         } else if (value.isNumberNode()) {
@@ -418,7 +479,8 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
     ) {
         return ValidationEvent.builder()
                 .id(additionalEventIdParts.length > 0
-                        ? eventId + "." + String.join(".", additionalEventIdParts) : eventId)
+                        ? eventId + "." + String.join(".", additionalEventIdParts)
+                        : eventId)
                 .severity(severity)
                 .sourceLocation(sourceLocation)
                 .shapeId(eventShapeId)
@@ -428,14 +490,18 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
 
     private List<ValidationEvent> applyPlugins(Shape shape) {
         List<ValidationEvent> events = new ArrayList<>();
-        timestampValidationStrategy.apply(shape, value, validationContext, (location, severity, message) -> {
-            events.add(event(message, severity, location.getSourceLocation()));
-        });
+        timestampValidationStrategy.apply(shape,
+                value,
+                validationContext,
+                (location, severity, message, additionalEventIdParts) -> events
+                        .add(event(message, severity, location.getSourceLocation(), additionalEventIdParts)));
 
         for (NodeValidatorPlugin plugin : BUILTIN) {
-            plugin.apply(shape, value, validationContext, (location, severity, message) -> {
-                events.add(event(message, severity, location.getSourceLocation()));
-            });
+            plugin.apply(shape,
+                    value,
+                    validationContext,
+                    (location, severity, message, additionalEventIdParts) -> events
+                            .add(event(message, severity, location.getSourceLocation(), additionalEventIdParts)));
         }
 
         return events;
@@ -451,8 +517,7 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
         private Node value;
         private Model model;
         private TimestampValidationStrategy timestampValidationStrategy = TimestampValidationStrategy.FORMAT;
-        private boolean allowOptionalNull;
-        private final BuilderRef<Set<Feature>> features = BuilderRef.forUnorderedSet();
+        private final Set<Feature> features = new HashSet<>();
 
         Builder() {}
 
@@ -533,18 +598,14 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
             return allowOptionalNull(allowBoxedNull);
         }
 
-        /**
-         * Configure how null values are handled when they are provided for
-         * optional types.
-         *
-         * <p>By default, null values are not allowed for optional types.
-         *
-         * @param allowOptionalNull Set to true to allow null values for optional shapes.
-         * @return Returns the builder.
-         */
+        @Deprecated
         public Builder allowOptionalNull(boolean allowOptionalNull) {
-            this.allowOptionalNull = allowOptionalNull;
-            return this;
+            if (allowOptionalNull) {
+                return addFeature(Feature.ALLOW_OPTIONAL_NULLS);
+            } else {
+                features.remove(Feature.ALLOW_OPTIONAL_NULLS);
+                return this;
+            }
         }
 
         /**
@@ -553,9 +614,8 @@ public final class NodeValidationVisitor implements ShapeVisitor<List<Validation
          * @param feature Feature to set.
          * @return Returns the builder.
          */
-        @SmithyInternalApi
         public Builder addFeature(Feature feature) {
-            this.features.get().add(feature);
+            this.features.add(feature);
             return this;
         }
 

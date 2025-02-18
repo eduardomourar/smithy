@@ -1,18 +1,7 @@
 /*
  * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.utils;
 
 import java.io.BufferedReader;
@@ -29,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Arrays;
 import java.util.Collections;
@@ -180,7 +170,10 @@ public final class IoUtils {
 
         if (exitValue != 0) {
             throw new RuntimeException(String.format(
-                    "Command `%s` failed with exit code %d and output:%n%n%s", command, exitValue, sb));
+                    "Command `%s` failed with exit code %d and output:%n%n%s",
+                    command,
+                    exitValue,
+                    sb));
         }
 
         return sb.toString();
@@ -333,6 +326,9 @@ public final class IoUtils {
             Files.walkFileTree(dir, new SimpleFileVisitor<Path>() {
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                    // Workaround for Windows systems that set some git packfiles to readonly
+                    file.toFile().setWritable(true);
+
                     Files.delete(file);
                     return FileVisitResult.CONTINUE;
                 }
@@ -340,9 +336,9 @@ public final class IoUtils {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                     return Files.isSymbolicLink(dir)
-                           // Don't delete symlink files, just delete the symlink.
-                           ? FileVisitResult.SKIP_SUBTREE
-                           : FileVisitResult.CONTINUE;
+                            // Don't delete symlink files, just delete the symlink.
+                            ? FileVisitResult.SKIP_SUBTREE
+                            : FileVisitResult.CONTINUE;
                 }
 
                 @Override
@@ -359,5 +355,49 @@ public final class IoUtils {
         }
 
         return true;
+    }
+
+    public static void copyDir(Path src, Path dest) {
+        try {
+            Files.walkFileTree(src, new CopyFileVisitor(src, dest));
+        } catch (IOException e) {
+            throw new RuntimeException(String.format(
+                    "Error copying directory from \"%s\" to \"%s\": %s",
+                    src,
+                    dest,
+                    e.getMessage()), e);
+        }
+    }
+
+    private static final class CopyFileVisitor extends SimpleFileVisitor<Path> {
+        private final Path source;
+        private final Path target;
+
+        CopyFileVisitor(Path source, Path target) {
+            this.source = source;
+            this.target = target;
+        }
+
+        @Override
+        public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+            Path resolve = target.resolve(source.relativize(dir));
+            if (Files.notExists(resolve)) {
+                Files.createDirectories(resolve);
+            }
+            return FileVisitResult.CONTINUE;
+        }
+
+        @Override
+        public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+            Path resolve = target.resolve(source.relativize(file));
+            Files.copy(file, resolve, StandardCopyOption.REPLACE_EXISTING);
+            return FileVisitResult.CONTINUE;
+
+        }
+
+        @Override
+        public FileVisitResult visitFileFailed(Path file, IOException exc) {
+            return FileVisitResult.TERMINATE;
+        }
     }
 }

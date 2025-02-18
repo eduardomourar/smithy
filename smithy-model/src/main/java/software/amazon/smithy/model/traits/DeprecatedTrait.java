@@ -1,24 +1,14 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.traits;
 
 import java.util.Optional;
 import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.node.ObjectNode;
 import software.amazon.smithy.model.shapes.ShapeId;
+import software.amazon.smithy.model.shapes.ShapeType;
 import software.amazon.smithy.utils.MapUtils;
 import software.amazon.smithy.utils.ToSmithyBuilder;
 
@@ -72,11 +62,25 @@ public final class DeprecatedTrait extends AbstractTrait implements ToSmithyBuil
         return Optional.ofNullable(message);
     }
 
+    public String getDeprecatedDescription(ShapeType shapeType) {
+        StringBuilder builder = new StringBuilder("This ");
+        builder.append(shapeType == ShapeType.OPERATION ? "operation" : "shape").append(" is deprecated");
+        if (since != null) {
+            builder.append(" since ").append(since);
+        }
+        if (message != null) {
+            builder.append(": ").append(message);
+        } else {
+            builder.append(".");
+        }
+        return builder.toString();
+    }
+
     @Override
     protected Node createNode() {
         return new ObjectNode(MapUtils.of(), getSourceLocation())
-                       .withOptionalMember("since", getSince().map(Node::from))
-                       .withOptionalMember("message", getMessage().map(Node::from));
+                .withOptionalMember("since", getSince().map(Node::from))
+                .withOptionalMember("message", getMessage().map(Node::from));
     }
 
     @Override

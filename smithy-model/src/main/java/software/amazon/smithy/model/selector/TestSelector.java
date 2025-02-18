@@ -1,18 +1,7 @@
 /*
- * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.selector;
 
 import java.util.List;
@@ -32,7 +21,7 @@ final class TestSelector implements InternalSelector {
     }
 
     @Override
-    public boolean push(Context context, Shape shape, Receiver next) {
+    public Response push(Context context, Shape shape, Receiver next) {
         for (InternalSelector predicate : selectors) {
             if (context.receivedShapes(shape, predicate)) {
                 // The instant something matches, stop testing selectors.
@@ -40,8 +29,7 @@ final class TestSelector implements InternalSelector {
             }
         }
 
-        // Note that this does not return false when there is not a match,
-        // since it should to continue to receive shapes to test.
-        return true;
+        // Continue to receive shapes because other shapes could match.
+        return Response.CONTINUE;
     }
 }

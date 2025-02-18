@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.validation.node;
 
 import java.time.format.DateTimeFormatter;
@@ -39,7 +28,13 @@ final class TimestampFormatPlugin implements NodeValidatorPlugin {
     @Override
     public void apply(Shape shape, Node value, Context context, Emitter emitter) {
         if (shape instanceof TimestampShape) {
-            validate(shape, shape.getTrait(TimestampFormatTrait.class).orElse(null), value, emitter);
+            // Don't validate the timestamp target if a referring member had the timestampFormat trait.
+            boolean fromMemberWithTrait = context.getReferringMember()
+                    .filter(member -> member.hasTrait(TimestampFormatTrait.class))
+                    .isPresent();
+            if (!fromMemberWithTrait) {
+                validate(shape, shape.getTrait(TimestampFormatTrait.class).orElse(null), value, emitter);
+            }
         } else if (shape instanceof MemberShape && shape.getTrait(TimestampFormatTrait.class).isPresent()) {
             // Only perform timestamp format validation on a member when it references
             // a timestamp shape and the member has an explicit timestampFormat trait.
@@ -58,9 +53,12 @@ final class TimestampFormatPlugin implements NodeValidatorPlugin {
                 case TimestampFormatTrait.EPOCH_SECONDS:
                     // Accepts any number including floats.
                     if (!value.isNumberNode()) {
-                        emitter.accept(value, Severity.ERROR, String.format(
-                                "Invalid %s value provided for a timestamp with a `%s` format.",
-                                value.getType(), trait.getValue()));
+                        emitter.accept(value,
+                                Severity.ERROR,
+                                String.format(
+                                        "Invalid %s value provided for a timestamp with a `%s` format.",
+                                        value.getType(),
+                                        trait.getValue()));
                     }
                     break;
                 case TimestampFormatTrait.HTTP_DATE:
@@ -80,18 +78,20 @@ final class TimestampFormatPlugin implements NodeValidatorPlugin {
             if (value.isStringNode()) {
                 validateDatetime(shape, value, emitter);
             } else {
-                emitter.accept(value, "Invalid " + value.getType() + " value provided for timestamp, `"
-                                      + shape.getId() + "`. Expected a number that contains epoch seconds with "
-                                      + "optional millisecond precision, or a string that contains an RFC 3339 "
-                                      + "formatted timestamp (e.g., \"1985-04-12T23:20:50.52Z\")");
+                emitter.accept(value,
+                        "Invalid " + value.getType() + " value provided for timestamp, `"
+                                + shape.getId() + "`. Expected a number that contains epoch seconds with "
+                                + "optional millisecond precision, or a string that contains an RFC 3339 "
+                                + "formatted timestamp (e.g., \"1985-04-12T23:20:50.52Z\")");
             }
         }
     }
 
     private void validateDatetime(Shape shape, Node value, Emitter emitter) {
         if (!value.isStringNode()) {
-            emitter.accept(value, "Expected a string value for a date-time timestamp "
-                                  + "(e.g., \"1985-04-12T23:20:50.52Z\")");
+            emitter.accept(value,
+                    "Expected a string value for a date-time timestamp "
+                            + "(e.g., \"1985-04-12T23:20:50.52Z\")");
             return;
         }
 
@@ -100,9 +100,10 @@ final class TimestampFormatPlugin implements NodeValidatorPlugin {
         // See: https://bugs.openjdk.java.net/browse/JDK-8166138
         // However, Smithy doesn't allow offsets for timestamp shapes.
         if (!(timestamp.endsWith("Z") && isValidFormat(timestamp, DATE_TIME_Z))) {
-            emitter.accept(value, "Invalid string value, `" + timestamp + "`, provided for timestamp, `"
-                                  + shape.getId() + "`. Expected an RFC 3339 formatted timestamp (e.g., "
-                                  + "\"1985-04-12T23:20:50.52Z\")");
+            emitter.accept(value,
+                    "Invalid string value, `" + timestamp + "`, provided for timestamp, `"
+                            + shape.getId() + "`. Expected an RFC 3339 formatted timestamp (e.g., "
+                            + "\"1985-04-12T23:20:50.52Z\")");
         }
     }
 
@@ -120,8 +121,9 @@ final class TimestampFormatPlugin implements NodeValidatorPlugin {
     private String createInvalidHttpDateMessage(String dateValue) {
         return String.format(
                 "Invalid value provided for %s formatted timestamp. Expected a string value that "
-                + "matches the IMF-fixdate production of RFC 7231 section-7.1.1.1. Found: %s",
-                TimestampFormatTrait.HTTP_DATE, dateValue);
+                        + "matches the IMF-fixdate production of RFC 9110 section-5.6.7. Found: %s",
+                TimestampFormatTrait.HTTP_DATE,
+                dateValue);
     }
 
     private boolean isValidFormat(String value, DateTimeFormatter format) {

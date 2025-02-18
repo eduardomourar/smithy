@@ -1,18 +1,7 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.rulesengine.traits;
 
 import java.util.LinkedHashMap;
@@ -24,7 +13,6 @@ import software.amazon.smithy.model.traits.AbstractTrait;
 import software.amazon.smithy.model.traits.AbstractTraitBuilder;
 import software.amazon.smithy.model.traits.Trait;
 import software.amazon.smithy.utils.BuilderRef;
-import software.amazon.smithy.utils.SmithyBuilder;
 import software.amazon.smithy.utils.SmithyUnstableApi;
 import software.amazon.smithy.utils.ToSmithyBuilder;
 
@@ -58,7 +46,7 @@ public final class StaticContextParamsTrait extends AbstractTrait implements ToS
     }
 
     @Override
-    public SmithyBuilder<StaticContextParamsTrait> toBuilder() {
+    public Builder toBuilder() {
         return new Builder()
                 .sourceLocation(getSourceLocation())
                 .parameters(parameters);
@@ -88,8 +76,7 @@ public final class StaticContextParamsTrait extends AbstractTrait implements ToS
     public static final class Builder extends AbstractTraitBuilder<StaticContextParamsTrait, Builder> {
         private final BuilderRef<Map<String, StaticContextParamDefinition>> parameters = BuilderRef.forOrderedMap();
 
-        private Builder() {
-        }
+        private Builder() {}
 
         public Builder parameters(Map<String, StaticContextParamDefinition> parameters) {
             this.parameters.clear();
@@ -117,5 +104,4 @@ public final class StaticContextParamsTrait extends AbstractTrait implements ToS
             return new StaticContextParamsTrait(this);
         }
     }
-
 }

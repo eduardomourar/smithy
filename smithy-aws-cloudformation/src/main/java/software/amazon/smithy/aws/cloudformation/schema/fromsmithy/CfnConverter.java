@@ -1,18 +1,7 @@
 /*
- * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.aws.cloudformation.schema.fromsmithy;
 
 import java.util.ArrayList;
@@ -25,16 +14,14 @@ import java.util.ServiceLoader;
 import java.util.Set;
 import software.amazon.smithy.aws.cloudformation.schema.CfnConfig;
 import software.amazon.smithy.aws.cloudformation.schema.CfnException;
+import software.amazon.smithy.aws.cloudformation.schema.fromsmithy.mappers.TaggingMapper;
 import software.amazon.smithy.aws.cloudformation.schema.model.Property;
 import software.amazon.smithy.aws.cloudformation.schema.model.ResourceSchema;
-import software.amazon.smithy.aws.cloudformation.schema.model.Tagging;
 import software.amazon.smithy.aws.cloudformation.traits.CfnNameTrait;
 import software.amazon.smithy.aws.cloudformation.traits.CfnResource;
 import software.amazon.smithy.aws.cloudformation.traits.CfnResourceIndex;
 import software.amazon.smithy.aws.cloudformation.traits.CfnResourceTrait;
 import software.amazon.smithy.aws.traits.ServiceTrait;
-import software.amazon.smithy.aws.traits.tagging.AwsTagIndex;
-import software.amazon.smithy.aws.traits.tagging.TaggableTrait;
 import software.amazon.smithy.jsonschema.JsonSchemaConverter;
 import software.amazon.smithy.jsonschema.JsonSchemaMapper;
 import software.amazon.smithy.jsonschema.PropertyNamingStrategy;
@@ -44,7 +31,6 @@ import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.knowledge.TopDownIndex;
 import software.amazon.smithy.model.node.ObjectNode;
 import software.amazon.smithy.model.shapes.MemberShape;
-import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ResourceShape;
 import software.amazon.smithy.model.shapes.ServiceShape;
 import software.amazon.smithy.model.shapes.Shape;
@@ -57,7 +43,6 @@ import software.amazon.smithy.utils.ListUtils;
 import software.amazon.smithy.utils.StringUtils;
 
 public final class CfnConverter {
-    private static final String DEFAULT_TAGS_NAME = "Tags";
     private ClassLoader classLoader = CfnConverter.class.getClassLoader();
     private CfnConfig config = new CfnConfig();
     private final List<Smithy2CfnExtension> extensions = new ArrayList<>();
@@ -224,8 +209,13 @@ public final class CfnConverter {
         Model updatedModel = model.toBuilder().addShape(pseudoResource).build();
         jsonSchemaConverterBuilder.model(updatedModel);
 
-        Context context = new Context(updatedModel, serviceShape, resourceShape, cfnResource,
-                pseudoResource, config, jsonSchemaConverterBuilder.build());
+        Context context = new Context(updatedModel,
+                serviceShape,
+                resourceShape,
+                cfnResource,
+                pseudoResource,
+                config,
+                jsonSchemaConverterBuilder.build());
 
         return new ConversionEnvironment(context, mappers);
     }
@@ -261,7 +251,8 @@ public final class CfnConverter {
 
         private ConversionEnvironment(
                 Context context,
-                List<CfnMapper> mappers) {
+                List<CfnMapper> mappers
+        ) {
             this.context = context;
             this.mappers = mappers;
         }
@@ -269,7 +260,8 @@ public final class CfnConverter {
 
     private ResourceSchema convertResource(ConversionEnvironment environment, ResourceShape resourceShape) {
         Context context = environment.context;
-        JsonSchemaConverter jsonSchemaConverter = context.getJsonSchemaConverter().toBuilder()
+        JsonSchemaConverter jsonSchemaConverter = context.getJsonSchemaConverter()
+                .toBuilder()
                 .rootShape(context.getResourceStructure())
                 .build();
         SchemaDocument document = jsonSchemaConverter.convert();
@@ -306,20 +298,6 @@ public final class CfnConverter {
             builder.addDefinition(definitionName, definition.getValue());
         }
 
-        if (resourceShape.hasTrait(TaggableTrait.class)) {
-            AwsTagIndex tagsIndex = AwsTagIndex.of(environment.context.getModel());
-            TaggableTrait trait = resourceShape.expectTrait(TaggableTrait.class);
-            Tagging.Builder tagBuilder = Tagging.builder()
-                    .taggable(true)
-                    .tagOnCreate(tagsIndex.isResourceTagOnCreate(resourceShape.getId()))
-                    .tagProperty(getTagsProperty(resourceShape))
-                    .cloudFormationSystemTags(!trait.getDisableSystemTags())
-                    // Unless tag-on-create is supported, Smithy tagging means
-                    .tagUpdatable(true);
-
-            builder.tagging(tagBuilder.build());
-        }
-
         // Apply all the mappers' after methods.
         ResourceSchema resourceSchema = builder.build();
         for (CfnMapper mapper : environment.mappers) {
@@ -331,7 +309,8 @@ public final class CfnConverter {
 
     private String resolveResourceTypeName(
             ConversionEnvironment environment,
-            CfnResourceTrait resourceTrait) {
+            CfnResourceTrait resourceTrait
+    ) {
         CfnConfig config = environment.context.getConfig();
         ServiceShape serviceShape = environment.context.getModel().expectShape(config.getService(), ServiceShape.class);
         Optional<ServiceTrait> serviceTrait = serviceShape.getTrait(ServiceTrait.class);
@@ -392,48 +371,8 @@ public final class CfnConverter {
             }
         });
 
-        injectTagsIfNecessary(builder, model, resource, cfnResource);
+        TaggingMapper.injectTagsMember(config, model, resource, builder);
 
         return builder.build();
-    }
-
-    private String getTagsProperty(ResourceShape resource) {
-        return resource.getTrait(TaggableTrait.class)
-                .flatMap(TaggableTrait::getProperty)
-                .map(property -> {
-                    if (config.getDisableCapitalizedProperties()) {
-                        return property;
-                    }
-                    return StringUtils.capitalize(property);
-                })
-                .orElse(DEFAULT_TAGS_NAME);
-    }
-
-    private void injectTagsIfNecessary(
-        StructureShape.Builder builder,
-        Model model,
-        ResourceShape resource,
-        CfnResource cfnResource
-    ) {
-        String tagPropertyName = getTagsProperty(resource);
-        if (resource.hasTrait(TaggableTrait.class)) {
-            AwsTagIndex tagIndex = AwsTagIndex.of(model);
-            TaggableTrait trait = resource.expectTrait(TaggableTrait.class);
-            if (!trait.getProperty().isPresent() || !cfnResource.getProperties()
-                    .containsKey(trait.getProperty().get())) {
-                if (trait.getProperty().isPresent()) {
-                    ShapeId definition = resource.getProperties().get(trait.getProperty().get());
-                    builder.addMember(tagPropertyName, definition);
-                } else {
-                    // Taggability must be through service-wide TagResource operation
-                    OperationShape tagResourceOp = model.expectShape(
-                        tagIndex.getTagResourceOperation(resource.getId()).get(), OperationShape.class);
-                    // A valid TagResource operation certainly has a single tags input member
-                    MemberShape member = AwsTagIndex.getTagsMember(model, tagResourceOp).get();
-                    member = member.toBuilder().id(builder.getId().withMember(tagPropertyName)).build();
-                    builder.addMember(member);
-                }
-            }
-        }
     }
 }

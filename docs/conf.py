@@ -1,4 +1,5 @@
 from smithy.lexer import SmithyLexer
+import requests
 
 project = u'Smithy'
 copyright = u'2022, Amazon Web Services'
@@ -6,8 +7,8 @@ author = u'Amazon Web Services'
 
 # -- General configuration ------------------------------------------------
 
-extensions = ['sphinx_copybutton', 'smithy']
-templates_path = ['../_templates', '../root-redirects']
+extensions = ['sphinx_copybutton', 'sphinx_substitution_extensions', 'smithy']
+templates_path = ['../_templates', '../root']
 
 pygments_style = "default"
 pygments_dark_style = "gruvbox-dark"
@@ -20,26 +21,26 @@ nitpicky = True
 
 html_theme = 'furo'
 language = "en"
-html_logo = "../_static/smithy.svg"
 
 html_static_path = ["../_static"]
 html_css_files = ["custom.css"]
-html_favicon = "../_static/favicon.png"
+html_favicon = "../_static/favicon.svg"
 
 html_theme_options = {
+    "light_logo": "smithy.svg",
+    "dark_logo": "smithy-dark.svg",
     "light_css_variables": {
         "admonition-font-size": "100%",
         "admonition-title-font-size": "100%",
         "color-brand-primary": "#C44536",
         "color-brand-content": "#00808b",
-        "color-announcement-background": "#711818de",
-        "color-announcement-text": "#fff"
+        "color-announcement-background": "#f8f8f8",
+        "color-announcement-text": "#383838"
     },
     "dark_css_variables": {
         "color-brand-primary": "#ed9d13",
         "color-brand-content": "#58d3ff",
-        "color-announcement-background": "#711818de",
-        "color-announcement-text": "#fff"
+        "color-announcement-background": "##1a1c1e;",
     },
     "footer_icons": [
         {
@@ -66,19 +67,37 @@ def __load_version():
     with open('../../VERSION', 'r') as file:
         return file.read().replace('\n', '')
 
-# We use the __smithy_version__ placeholder in documentation to represent
-# the current Smithy library version number. This is found and replaced
-# using a source-read pre-processor so that the generated documentation
-# always references the current VERSION.
-smithy_version = __load_version()
-smithy_version_placeholder = "__smithy_version__"
+# Find the latest version of the gradle plugin from github
+def __load_gradle_version():
+    return requests.get('https://api.github.com/repos/smithy-lang/smithy-gradle-plugin/tags').json()[0]['name']
 
+# Find the latest version of the typescript codegen plugin from maven repo
+def __load_typescript_codegen_version():
+    return requests.get('https://search.maven.org/solrsearch/select?q=g:"software.amazon.smithy.typescript"'
+        + '+AND+a:"smithy-typescript-codegen"&wt=json').json()['response']['docs'][0]['latestVersion']
+
+# Find the latest version of smithy-java from github
+def __load_java_version():
+    return requests.get('https://api.github.com/repos/smithy-lang/smithy-java/tags').json()[0]['name']
+
+# We use this list of replacements to replace placeholder values in the documentation
+# with computed values. These are found and replaced
+# using a source-read pre-processor so that the generated documentation
+# always uses the latest computed value for the placeholder.
+replacements = [
+    ("__smithy_version__", __load_version()),
+    ("__smithy_gradle_version__", __load_gradle_version()),
+    ("__smithy_typescript_version__", __load_typescript_codegen_version()),
+    ("__smithy_java_version__", __load_java_version())
+]
 
 def setup(sphinx):
     sphinx.add_lexer("smithy", SmithyLexer)
     sphinx.connect('source-read', source_read_handler)
-    print("Finding and replacing '" + smithy_version_placeholder + "' with '" + smithy_version + "'")
+    for placeholder, replacement in replacements:
+        print("Finding and replacing '" + placeholder + "' with '" + replacement + "'")
 
-# Rewrites __smithy_version__ to the version found in ../VERSION
+# Rewrites placeholders with computed value
 def source_read_handler(app, docname, source):
-    source[0] = source[0].replace(smithy_version_placeholder, smithy_version)
+    for placeholder, replacement in replacements:
+        source[0] = source[0].replace(placeholder, replacement)

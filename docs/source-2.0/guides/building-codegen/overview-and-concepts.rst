@@ -25,8 +25,9 @@ Interfaces (SPI).
 Consider the following smithy-build.json file:
 
 .. code-block:: json
+    :caption: smithy-build.json
 
-   {
+    {
        "version": "1.0",
        "plugins": {
            "foo-client-codegen": {
@@ -36,7 +37,7 @@ Consider the following smithy-build.json file:
                "edition": "2022"
            }
        }
-   }
+    }
 
 This file tells Smithy-Build to generate a hypothetical Foo language
 client using the ``foo-client-codegen`` plugin found on the classpath.
@@ -44,7 +45,7 @@ client using the ``foo-client-codegen`` plugin found on the classpath.
 .. seealso::
 
    - `Smithy Gradle plugin <https://github.com/awslabs/smithy-gradle-plugin>`__
-   - `DirectedCodegen <https://github.com/awslabs/smithy/blob/main/smithy-codegen-core/src/main/java/software/amazon/smithy/codegen/core/directed/DirectedCodegen.java>`__
+   - `DirectedCodegen <https://github.com/smithy-lang/smithy/blob/main/smithy-codegen-core/src/main/java/software/amazon/smithy/codegen/core/directed/DirectedCodegen.java>`__
      to more easily implement codegen
    - :doc:`configuring-the-generator`
 
@@ -74,7 +75,7 @@ choices were made and leave a record for future contributors.
 
 Example Smithy codegen design documents:
 
-- https://awslabs.github.io/smithy-rs/design/
+- https://smithy-lang.github.io/smithy-rs/design/
 - https://github.com/awslabs/smithy-kotlin/tree/main/docs/design
 - https://github.com/awslabs/aws-sdk-kotlin/tree/main/docs/design
 - https://github.com/awslabs/smithy-ruby/wiki
@@ -149,8 +150,9 @@ implementation. For example, here's how service code generation could be
 configured for a Java code generator:
 
 .. code-block:: json
+    :caption: smithy-build.json
 
-   {
+    {
        "version": "1.0",
        "projections": {
            "source": {
@@ -164,7 +166,7 @@ configured for a Java code generator:
                }
            }
        }
-   }
+    }
 
 
 Client generation
@@ -218,7 +220,7 @@ Type generation
 Smithy code generators can generate standalone types. For example, this
 would happen when a service has no operations or resources but only shapes
 bound to the service via the (upcoming)
-`shapes property <https://github.com/awslabs/smithy/pull/1061>`__.
+`shapes property <https://github.com/smithy-lang/smithy/pull/1061>`__.
 
 - Generation of types should still require a service shape that is
   used to create a closure of shapes.

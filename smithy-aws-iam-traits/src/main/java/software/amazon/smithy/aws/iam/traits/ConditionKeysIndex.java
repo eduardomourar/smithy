@@ -1,18 +1,7 @@
 /*
- * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.aws.iam.traits;
 
 import java.util.Collections;
@@ -24,6 +13,7 @@ import software.amazon.smithy.aws.traits.ArnReferenceTrait;
 import software.amazon.smithy.aws.traits.ServiceTrait;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.knowledge.KnowledgeIndex;
+import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ResourceShape;
 import software.amazon.smithy.model.shapes.ServiceShape;
 import software.amazon.smithy.model.shapes.Shape;
@@ -47,34 +37,38 @@ public final class ConditionKeysIndex implements KnowledgeIndex {
     private final Map<ShapeId, Map<ShapeId, Set<String>>> resourceConditionKeys = new HashMap<>();
 
     public ConditionKeysIndex(Model model) {
-        model.shapes(ServiceShape.class).forEach(service -> {
-            service.getTrait(ServiceTrait.class).ifPresent(trait -> {
-                // Copy over the explicitly defined condition keys into the service map.
-                // This will be mutated when adding inferred resource condition keys.
-                serviceConditionKeys.put(service.getId(), new HashMap<>(
-                        service.getTrait(DefineConditionKeysTrait.class)
-                                .map(DefineConditionKeysTrait::getConditionKeys)
-                                .orElse(MapUtils.of())));
-                resourceConditionKeys.put(service.getId(), new HashMap<>());
+        for (ServiceShape service : model.getServiceShapesWithTrait(ServiceTrait.class)) {
+            // Defines the scoping of any derived condition keys.
+            String arnNamespace = service.expectTrait(ServiceTrait.class).getArnNamespace();
 
-                // Defines the scoping of any derived condition keys.
-                String arnRoot = trait.getArnNamespace();
+            // Copy over the explicitly defined condition keys into the service map.
+            // This will be mutated when adding inferred resource condition keys.
+            Map<String, ConditionKeyDefinition> serviceKeys = new HashMap<>();
+            if (service.hasTrait(DefineConditionKeysTrait.ID)) {
+                DefineConditionKeysTrait trait = service.expectTrait(DefineConditionKeysTrait.class);
+                for (Map.Entry<String, ConditionKeyDefinition> entry : trait.getConditionKeys().entrySet()) {
+                    // If no colon is present, we infer that this condition key is for the
+                    // current service and apply its ARN namespace.
+                    String key = entry.getKey();
+                    if (!key.contains(":")) {
+                        key = arnNamespace + ":" + key;
+                    }
+                    serviceKeys.put(key, entry.getValue());
+                }
+            }
+            serviceConditionKeys.put(service.getId(), serviceKeys);
+            resourceConditionKeys.put(service.getId(), new HashMap<>());
 
-                // Compute the keys of child resources.
-                service.getResources().stream()
-                        .flatMap(id -> OptionalUtils.stream(model.getShape(id)))
-                        .forEach(resource -> {
-                            compute(model, service.getId(), arnRoot, resource, null);
-                        });
+            // Compute the keys of child resources.
+            for (ShapeId resourceId : service.getResources()) {
+                compute(model, service, arnNamespace, model.expectShape(resourceId, ResourceShape.class), null);
+            }
 
-                // Compute the keys of operations of the service.
-                service.getOperations().stream()
-                        .flatMap(id -> OptionalUtils.stream(model.getShape(id)))
-                        .forEach(operation -> {
-                            compute(model, service.getId(), arnRoot, operation, null);
-                        });
-            });
-        });
+            // Compute the keys of operations of the service.
+            for (ShapeId operationId : service.getOperations()) {
+                compute(model, service, arnNamespace, model.expectShape(operationId, OperationShape.class), null);
+            }
+        }
     }
 
     public static ConditionKeysIndex of(Model model) {
@@ -103,7 +97,8 @@ public final class ConditionKeysIndex implements KnowledgeIndex {
      */
     public Set<String> getConditionKeyNames(ToShapeId service) {
         return resourceConditionKeys.getOrDefault(service.toShapeId(), MapUtils.of())
-                .values().stream()
+                .values()
+                .stream()
                 .flatMap(Set::stream)
                 .collect(SetUtils.toUnmodifiableSet());
     }
@@ -153,7 +148,7 @@ public final class ConditionKeysIndex implements KnowledgeIndex {
 
     private void compute(
             Model model,
-            ShapeId service,
+            ServiceShape service,
             String arnRoot,
             Shape subject,
             ResourceShape parent
@@ -163,25 +158,34 @@ public final class ConditionKeysIndex implements KnowledgeIndex {
 
     private void compute(
             Model model,
-            ShapeId service,
+            ServiceShape service,
             String arnRoot,
             Shape subject,
             ResourceShape parent,
             Set<String> parentDefinitions
     ) {
-        Set<String> definitions = new HashSet<>(parentDefinitions);
-        resourceConditionKeys.get(service).put(subject.getId(), definitions);
+        Set<String> definitions = new HashSet<>();
+        if (!subject.hasTrait(IamResourceTrait.ID)
+                || !subject.expectTrait(IamResourceTrait.class).isDisableConditionKeyInheritance()) {
+            definitions.addAll(parentDefinitions);
+        }
+        resourceConditionKeys.get(service.getId()).put(subject.getId(), definitions);
         subject.getTrait(ConditionKeysTrait.class).ifPresent(trait -> definitions.addAll(trait.getValues()));
 
         // Continue recursing into resources and computing keys.
         subject.asResourceShape().ifPresent(resource -> {
+            boolean disableConditionKeyInference = resource.hasTrait(DisableConditionKeyInferenceTrait.class)
+                    || service.hasTrait(DisableConditionKeyInferenceTrait.class);
+
             // Add any inferred resource identifiers to the resource and to the service-wide definitions.
-            Map<String, String> childIdentifiers = !resource.hasTrait(DisableConditionKeyInferenceTrait.class)
-                    ? inferChildResourceIdentifiers(model, service, arnRoot, resource, parent)
+            Map<String, String> childIdentifiers = !disableConditionKeyInference
+                    ? inferChildResourceIdentifiers(model, service.getId(), arnRoot, resource, parent)
                     : MapUtils.of();
 
             // Compute the keys of each child operation, passing no keys.
-            resource.getAllOperations().stream().flatMap(id -> OptionalUtils.stream(model.getShape(id)))
+            resource.getAllOperations()
+                    .stream()
+                    .flatMap(id -> OptionalUtils.stream(model.getShape(id)))
                     .forEach(child -> compute(model, service, arnRoot, child, resource));
 
             // Child resources always inherit the identifiers of the parent.
@@ -248,7 +252,7 @@ public final class ConditionKeysIndex implements KnowledgeIndex {
 
     private static String getContextKeyResourceName(ResourceShape resource) {
         return resource.getTrait(IamResourceTrait.class)
-                       .flatMap(IamResourceTrait::getName)
-                       .orElse(resource.getId().getName());
+                .flatMap(IamResourceTrait::getName)
+                .orElse(resource.getId().getName());
     }
 }

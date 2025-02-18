@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.transform;
 
 import java.util.ArrayList;
@@ -271,9 +260,10 @@ public final class ModelTransformer {
      * @see #mapShapes(Model, Function) for more information.
      */
     public Model mapTraits(Model model, List<BiFunction<Shape, Trait, Trait>> mappers) {
-        return mapTraits(model, mappers.stream()
-                .reduce((a, b) -> (s, t) -> b.apply(s, a.apply(s, t)))
-                .orElse((s, t) -> t));
+        return mapTraits(model,
+                mappers.stream()
+                        .reduce((a, b) -> (s, t) -> b.apply(s, a.apply(s, t)))
+                        .orElse((s, t) -> t));
     }
 
     /**
@@ -515,6 +505,10 @@ public final class ModelTransformer {
      *
      * <p>A member will be created on the shape for each entry in the {@link EnumTrait}.
      *
+     * <p>When the enum definition from the enum trait has been marked as deprecated, or
+     * tagged as "internal", the corresponding enum shape member will be marked with the
+     * DeprecatedTrait or InternalTrait accordingly.
+     *
      * @param model Model to transform.
      * @param synthesizeEnumNames Whether enums without names should have names synthesized if possible.
      * @return Returns the transformed model.
@@ -651,5 +645,82 @@ public final class ModelTransformer {
      */
     public Model downgradeToV1(Model model) {
         return new DowngradeToV1().transform(this, model);
+    }
+
+    /**
+     * Remove default traits if the default conflicts with the range trait of the shape.
+     *
+     * @param model Model to transform.
+     * @return Returns the transformed model.
+     */
+    public Model removeInvalidDefaults(Model model) {
+        return new RemoveInvalidDefaults().transform(this, model);
+
+    }
+
+    /**
+     * Deconflicts errors that share a status code.
+     *
+     * @param model Model to transform.
+     * @return Returns the transformed model.
+     */
+    public Model deconflictErrorsWithSharedStatusCode(Model model, ServiceShape forService) {
+        return new DeconflictErrorsWithSharedStatusCode(forService).transform(this, model);
+    }
+
+    /**
+     * Flattens all service-level pagination information into operation-level pagination traits.
+     *
+     * @param model Model to transform.
+     * @return Returns the transformed model.
+     */
+    public Model flattenPaginationInfoIntoOperations(Model model, ServiceShape forService) {
+        return new FlattenPaginationInfo(forService).transform(this, model);
+    }
+
+    /**
+     * Removes any shapes that were deprecated before the specified date.
+     *
+     * <p>The relative date used as a filter should match the ISO 8601 Calendar date format
+     * (i.e. YYYY-MM-DD with optional hyphens).
+     * <p><strong>Note:</strong> Shapes with {@code @deprecated} trait but no {@code since} property are not filtered.
+     *
+     * @param model Model to transform.
+     * @param relativeDate ISO 8601 calendar date to use to filter out deprecated shapes.
+     * @return Returns the transformed model.
+     *
+     * @see <a href="https://www.iso.org/iso-8601-date-and-time-format.html">ISO 8601</a>
+     */
+    public Model filterDeprecatedRelativeDate(Model model, String relativeDate) {
+        return new FilterDeprecatedRelativeDate(relativeDate).transform(this, model);
+    }
+
+    /**
+     * Removes any shapes that were deprecated before the specified version.
+     *
+     * <p>The version used should be a valid Semantic Version (SemVer). For example, {@code 1.2.3.1}.
+     * <p><strong>Note:</strong> Shapes with {@code @deprecated} trait but no {@code since} property are not filtered.
+     *
+     * @param model Model to transform.
+     * @param relativeVersion Semantic Version to use to filter out deprecated shapes.
+     * @return Returns the transformed model.
+     *
+     * @see <a href="https://semver.org/">SemVer</a>
+     */
+    public Model filterDeprecatedRelativeVersion(Model model, String relativeVersion) {
+        return new FilterDeprecatedRelativeVersion(relativeVersion).transform(this, model);
+    }
+
+    /**
+     * Makes any {@code @idempotencyToken} fields {@code @clientOptional} so that missing tokens can be injected.
+     *
+     * <p>Idempotency tokens that are required should fail validation, but shouldn't be required to create a type,
+     * allowing for a default value to be injected when missing.
+     *
+     * @param model Model to transform.
+     * @return Returns the transformed model.
+     */
+    public Model makeIdempotencyTokensClientOptional(Model model) {
+        return MakeIdempotencyTokenClientOptional.transform(model);
     }
 }

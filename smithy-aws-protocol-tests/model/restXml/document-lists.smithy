@@ -1,6 +1,8 @@
 // This file defines test cases that serialize lists in XML documents.
 
 $version: "2.0"
+$operationInputSuffix: "Request"
+$operationOutputSuffix: "Response"
 
 namespace aws.protocoltests.restxml
 
@@ -33,8 +35,8 @@ use smithy.test#httpResponseTests
 @idempotent
 @http(uri: "/XmlLists", method: "PUT")
 operation XmlLists {
-    input: XmlListsInputOutput,
-    output: XmlListsInputOutput,
+    input := with [XmlListsInputOutput] {}
+    output := with [XmlListsInputOutput] {}
 }
 
 apply XmlLists @httpRequestTests([
@@ -45,7 +47,7 @@ apply XmlLists @httpRequestTests([
         method: "PUT",
         uri: "/XmlLists",
         body: """
-              <XmlListsInputOutput>
+              <XmlListsRequest>
                   <stringList>
                       <member>foo</member>
                       <member>bar</member>
@@ -110,7 +112,7 @@ apply XmlLists @httpRequestTests([
                       <value>7</value>
                       <other>8</other>
                   </flattenedStructureList>
-              </XmlListsInputOutput>
+              </XmlListsRequest>
               """,
         bodyMediaType: "application/xml",
         headers: {
@@ -159,7 +161,7 @@ apply XmlLists @httpResponseTests([
         protocol: restXml,
         code: 200,
         body: """
-              <XmlListsInputOutput>
+              <XmlListsResponse>
                   <stringList>
                       <member>foo</member>
                       <member>bar</member>
@@ -228,7 +230,7 @@ apply XmlLists @httpResponseTests([
                       <value>7</value>
                       <other>8</other>
                   </flattenedStructureList>
-              </XmlListsInputOutput>
+              </XmlListsResponse>
               """,
         bodyMediaType: "application/xml",
         headers: {
@@ -276,8 +278,8 @@ apply XmlLists @httpResponseTests([
 @http(uri: "/XmlEmptyLists", method: "PUT")
 @tags(["client-only"])
 operation XmlEmptyLists {
-    input: XmlListsInputOutput,
-    output: XmlListsInputOutput,
+    input := with [XmlListsInputOutput] {}
+    output := with [XmlListsInputOutput] {}
 }
 
 apply XmlEmptyLists @httpRequestTests([
@@ -288,10 +290,10 @@ apply XmlEmptyLists @httpRequestTests([
         method: "PUT",
         uri: "/XmlEmptyLists",
         body: """
-              <XmlListsInputOutput>
+              <XmlEmptyListsRequest>
                       <stringList></stringList>
                       <stringSet></stringSet>
-              </XmlListsInputOutput>
+              </XmlEmptyListsRequest>
               """,
         bodyMediaType: "application/xml",
         headers: {
@@ -312,10 +314,10 @@ apply XmlEmptyLists @httpResponseTests([
         protocol: restXml,
         code: 200,
         body: """
-              <XmlListsInputOutput>
+              <XmlEmptyListsResponse>
                       <stringList/>
                       <stringSet></stringSet>
-              </XmlListsInputOutput>
+              </XmlEmptyListsResponse>
               """,
         bodyMediaType: "application/xml",
         headers: {
@@ -329,6 +331,7 @@ apply XmlEmptyLists @httpResponseTests([
     }
 ])
 
+@mixin
 structure XmlListsInputOutput {
     stringList: StringList,
 
@@ -349,8 +352,10 @@ structure XmlListsInputOutput {
     @xmlName("renamed")
     renamedListMembers: RenamedListMembers,
 
+    @suppress(["XmlFlattenedTrait"])
     @xmlFlattened
     // The xmlname on the targeted list is ignored, and the member name is used.
+    // The validation that flags this is suppressed so we can test this behavior.
     flattenedList: RenamedListMembers,
 
     @xmlName("customName")
@@ -373,7 +378,10 @@ structure XmlListsInputOutput {
     @xmlName("myStructureList")
     structureList: StructureList,
 
+    @suppress(["XmlFlattenedTrait"])
     @xmlFlattened
+    // The xmlname on the targeted list is ignored, and the member name is used.
+    // The validation that flags this is suppressed so we can test this behavior.
     flattenedStructureList: StructureList
 }
 

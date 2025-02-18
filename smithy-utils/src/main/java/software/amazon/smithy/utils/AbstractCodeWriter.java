@@ -1,25 +1,17 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.utils;
 
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -574,10 +566,54 @@ import java.util.regex.Pattern;
  */
 public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
 
+    // Valid formatter characters that can be registered. Must be sorted for binary search to work.
+    static final char[] VALID_FORMATTER_CHARS = {
+            '!',
+            '%',
+            '&',
+            '*',
+            '+',
+            ',',
+            '-',
+            '.',
+            ';',
+            '=',
+            '@',
+            'A',
+            'B',
+            'C',
+            'D',
+            'E',
+            'F',
+            'G',
+            'H',
+            'I',
+            'J',
+            'K',
+            'L',
+            'M',
+            'N',
+            'O',
+            'P',
+            'Q',
+            'R',
+            'S',
+            'T',
+            'U',
+            'V',
+            'W',
+            'X',
+            'Y',
+            'Z',
+            '_',
+            '`'};
+
     private static final Pattern LINES = Pattern.compile("\\r?\\n");
     private static final Map<Character, BiFunction<Object, String, String>> DEFAULT_FORMATTERS = MapUtils.of(
-            'L', (s, i) -> formatLiteral(s),
-            'S', (s, i) -> StringUtils.escapeJavaString(formatLiteral(s), i));
+            'L',
+            (s, i) -> formatLiteral(s),
+            'S',
+            (s, i) -> StringUtils.escapeJavaString(formatLiteral(s), i));
 
     private final Deque<State> states = new ArrayDeque<>();
     private State currentState;
@@ -603,22 +639,19 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
     /**
      * Copies settings from the given AbstractCodeWriter into this AbstractCodeWriter.
      *
-     * <p>The settings of the {@code other} AbstractCodeWriter will overwrite
-     * both global and state-based settings of this AbstractCodeWriter. Formatters of
-     * the {@code other} AbstractCodeWriter will be merged with the formatters of this
-     * AbstractCodeWriter, and in the case of conflicts, the formatters of the
-     * {@code other} will take precedence.
+     * <p>The settings of the {@code other} AbstractCodeWriter will overwrite both global and state-based settings
+     * of this AbstractCodeWriter.
      *
-     * <p>Stateful settings of the {@code other} AbstractCodeWriter are copied into
-     * the <em>current</em> state of this AbstractCodeWriter. Only the settings of
-     * the top-most state is copied. Other states, and the contents of the
-     * top-most state are not copied.
+     * <p>Stateful settings of the {@code other} AbstractCodeWriter like formatters, interceptors, and context are
+     * flattened and then copied into the <em>current</em> state of this AbstractCodeWriter. Any conflicts between
+     * formatters, interceptors, or context of the current writer are overwritten by the other writer. The stack of
+     * states and the contents written to {@code other} are not copied.
      *
      * <pre>{@code
-     * SimpleCodeWritera = new SimpleCodeWriter();
+     * SimpleCodeWriter a = new SimpleCodeWriter();
      * a.setExpressionStart('#');
      *
-     * SimpleCodeWriterb = new SimpleCodeWriter();
+     * SimpleCodeWriter b = new SimpleCodeWriter();
      * b.copySettingsFrom(a);
      *
      * assert(b.getExpressionStart() == '#');
@@ -634,6 +667,16 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
 
         // Copy the current state settings of other into the current state.
         currentState.copyStateFrom(other.currentState);
+
+        // Flatten containers into the current state. This is done in reverse order to ensure that more recent
+        // state changes supersede earlier changes.
+        Iterator<State> reverseOtherStates = other.states.descendingIterator();
+        while (reverseOtherStates.hasNext()) {
+            State otherState = reverseOtherStates.next();
+            currentState.interceptors.addAll(otherState.interceptors);
+            currentState.formatters.putAll(otherState.formatters);
+            currentState.context.putAll(otherState.context);
+        }
     }
 
     /**
@@ -686,7 +729,7 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
      */
     @SuppressWarnings("unchecked")
     public T putFormatter(char identifier, BiFunction<Object, String, String> formatFunction) {
-        this.currentState.formatters.get().putFormatter(identifier, formatFunction);
+        this.currentState.putFormatter(identifier, formatFunction);
         return (T) this;
     }
 
@@ -901,7 +944,7 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
         info.putMetadata("path", getStateDebugPath());
 
         if (numberOfContextLines < 0) {
-            throw new IllegalArgumentException("Cannot get fewer than 0 lines");
+            throw new IllegalArgumentException("Cannot get fewer than 0Lines");
         } else if (numberOfContextLines > 0) {
             StringBuilder lastLines = new StringBuilder();
             // Get the last N lines of text written.
@@ -962,9 +1005,15 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
 
             // Don't attempt to intercept anonymous sections.
             if (!(sectionValue instanceof AnonymousCodeSection)) {
-                for (CodeInterceptor<CodeSection, T> interceptor : popped.interceptors.peek().get(sectionValue)) {
-                    result = interceptSection(popped, interceptor, result);
+                // Ensure the remaining parent interceptors are applied in the order they were inserted.
+                // This is the reverse order used when normally iterating over the states deque.
+                Iterator<State> insertionOrderedStates = states.descendingIterator();
+                while (insertionOrderedStates.hasNext()) {
+                    State state = insertionOrderedStates.next();
+                    result = applyPoppedInterceptors(popped, state, sectionValue, result);
                 }
+                // Now ensure the popped state's interceptors are applied.
+                result = applyPoppedInterceptors(popped, popped, sectionValue, result);
             }
 
             if (popped.isInline) {
@@ -984,6 +1033,13 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
         }
 
         return (T) this;
+    }
+
+    private String applyPoppedInterceptors(State popped, State state, CodeSection sectionValue, String result) {
+        for (CodeInterceptor<CodeSection, T> interceptor : state.getInterceptors(sectionValue)) {
+            result = interceptSection(popped, interceptor, result);
+        }
+        return result;
     }
 
     // This method exists because inlining in popSection is impossible due to needing to mutate a result variable.
@@ -1070,7 +1126,7 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
      */
     @SuppressWarnings("unchecked")
     public T onSection(String sectionName, Consumer<Object> interceptor) {
-        currentState.interceptors.get().putInterceptor(CodeInterceptor.forName(sectionName, (w, p) -> {
+        currentState.putInterceptor(CodeInterceptor.forName(sectionName, (w, p) -> {
             String trimmedContent = removeTrailingNewline(p);
             interceptor.accept(trimmedContent);
         }));
@@ -1098,7 +1154,7 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
      */
     @SuppressWarnings("unchecked")
     public <S extends CodeSection> T onSection(CodeInterceptor<S, T> interceptor) {
-        currentState.interceptors.get().putInterceptor(interceptor);
+        currentState.putInterceptor(interceptor);
         return (T) this;
     }
 
@@ -1421,7 +1477,7 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
      * @return Returns this.
      */
     public T openBlock(String textBeforeNewline, String textAfterNewline, Runnable f) {
-        return openBlock(textBeforeNewline, textAfterNewline, new Object[]{}, f);
+        return openBlock(textBeforeNewline, textAfterNewline, new Object[] {}, f);
     }
 
     /**
@@ -1436,7 +1492,7 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
      * @return Returns this.
      */
     public T openBlock(String textBeforeNewline, String textAfterNewline, Object arg1, Runnable f) {
-        return openBlock(textBeforeNewline, textAfterNewline, new Object[]{arg1}, f);
+        return openBlock(textBeforeNewline, textAfterNewline, new Object[] {arg1}, f);
     }
 
     /**
@@ -1451,9 +1507,14 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
      * @param f Runnable function to execute inside of the block.
      * @return Returns this.
      */
-    public T openBlock(String textBeforeNewline, String textAfterNewline,
-                       Object arg1, Object arg2, Runnable f) {
-        return openBlock(textBeforeNewline, textAfterNewline, new Object[]{arg1, arg2}, f);
+    public T openBlock(
+            String textBeforeNewline,
+            String textAfterNewline,
+            Object arg1,
+            Object arg2,
+            Runnable f
+    ) {
+        return openBlock(textBeforeNewline, textAfterNewline, new Object[] {arg1, arg2}, f);
     }
 
     /**
@@ -1469,9 +1530,15 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
      * @param f Runnable function to execute inside of the block.
      * @return Returns this.
      */
-    public T openBlock(String textBeforeNewline, String textAfterNewline,
-                       Object arg1, Object arg2, Object arg3, Runnable f) {
-        return openBlock(textBeforeNewline, textAfterNewline, new Object[]{arg1, arg2, arg3}, f);
+    public T openBlock(
+            String textBeforeNewline,
+            String textAfterNewline,
+            Object arg1,
+            Object arg2,
+            Object arg3,
+            Runnable f
+    ) {
+        return openBlock(textBeforeNewline, textAfterNewline, new Object[] {arg1, arg2, arg3}, f);
     }
 
     /**
@@ -1488,9 +1555,16 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
      * @param f Runnable function to execute inside of the block.
      * @return Returns this.
      */
-    public T openBlock(String textBeforeNewline, String textAfterNewline,
-                       Object arg1, Object arg2, Object arg3, Object arg4, Runnable f) {
-        return openBlock(textBeforeNewline, textAfterNewline, new Object[]{arg1, arg2, arg3, arg4}, f);
+    public T openBlock(
+            String textBeforeNewline,
+            String textAfterNewline,
+            Object arg1,
+            Object arg2,
+            Object arg3,
+            Object arg4,
+            Runnable f
+    ) {
+        return openBlock(textBeforeNewline, textAfterNewline, new Object[] {arg1, arg2, arg3, arg4}, f);
     }
 
     /**
@@ -1508,9 +1582,17 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
      * @param f Runnable function to execute inside of the block.
      * @return Returns this.
      */
-    public T openBlock(String textBeforeNewline, String textAfterNewline,
-                       Object arg1, Object arg2, Object arg3, Object arg4, Object arg5, Runnable f) {
-        return openBlock(textBeforeNewline, textAfterNewline, new Object[]{arg1, arg2, arg3, arg4, arg5}, f);
+    public T openBlock(
+            String textBeforeNewline,
+            String textAfterNewline,
+            Object arg1,
+            Object arg2,
+            Object arg3,
+            Object arg4,
+            Object arg5,
+            Runnable f
+    ) {
+        return openBlock(textBeforeNewline, textAfterNewline, new Object[] {arg1, arg2, arg3, arg4, arg5}, f);
     }
 
     /**
@@ -1591,14 +1673,14 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
     protected boolean isStackTraceRelevant(StackTraceElement e) {
         String normalized = e.getClassName().replace("$", ".");
         return !normalized.startsWith("java.")
-               // Ignore writes made by AbstractCodeWriter or AbstractCodeWriter$State.
-               && !normalized.startsWith(AbstractCodeWriter.class.getCanonicalName())
-               // Ignore writes made by subclasses of this class.
-               && !normalized.startsWith(getClass().getCanonicalName())
-               // Ignore writes made by SimpleCodeWriter.
-               && !normalized.equals(SimpleCodeWriter.class.getCanonicalName())
-               // Ignore any writes made by the well-known SymbolWriter from smithy-codegen-core.
-               && !normalized.equals("software.amazon.smithy.utils.SymbolWriter");
+                // Ignore writes made by AbstractCodeWriter or AbstractCodeWriter$State.
+                && !normalized.startsWith(AbstractCodeWriter.class.getCanonicalName())
+                // Ignore writes made by subclasses of this class.
+                && !normalized.startsWith(getClass().getCanonicalName())
+                // Ignore writes made by SimpleCodeWriter.
+                && !normalized.equals(SimpleCodeWriter.class.getCanonicalName())
+                // Ignore any writes made by the well-known SymbolWriter from smithy-codegen-core.
+                && !normalized.equals("software.amazon.smithy.utils.SymbolWriter");
     }
 
     /**
@@ -1771,7 +1853,7 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
 
     private boolean builderEndsWith(StringBuilder builder, String check) {
         return builder.length() > check.length()
-               && builder.substring(builder.length() - check.length(), builder.length()).equals(check);
+                && builder.substring(builder.length() - check.length(), builder.length()).equals(check);
     }
 
     /**
@@ -1857,7 +1939,7 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
      */
     @SuppressWarnings("unchecked")
     public T putContext(String key, Object value) {
-        currentState.context.get().put(key, value);
+        currentState.context.put(key, value);
         return (T) this;
     }
 
@@ -1879,40 +1961,45 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
     /**
      * Removes a named key-value pair from the context of the current state.
      *
+     * <p>This method has no effect if the parent state defines the context key value pair.
+     *
      * @param key Key to add to remove from the current context.
      * @return Returns self.
      */
     @SuppressWarnings("unchecked")
     public T removeContext(String key) {
-        if (currentState.context.peek().containsKey(key)) {
-            currentState.context.get().remove(key);
+        if (currentState.context.containsKey(key)) {
+            currentState.context.remove(key);
+        } else {
+            // Parent states might have a value for this context key, so explicitly set it to null in this context.
+            currentState.context.put(key, null);
         }
         return (T) this;
     }
 
     /**
-     * Gets a named contextual key-value pair from the current state.
+     * Gets a named contextual key-value pair from the current state or any parent states.
      *
      * @param key Key to retrieve.
      * @return Returns the associated value or null if not present.
      */
     public Object getContext(String key) {
-        CodeSection section = currentState.sectionValue;
-        Map<String, Object> currentContext = currentState.context.peek();
-        if (currentContext.containsKey(key)) {
-            return currentContext.get(key);
-        } else if (section != null) {
-            Method method = findContextMethod(section, key);
-            if (method != null) {
-                try {
-                    return method.invoke(section);
-                } catch (ReflectiveOperationException e) {
-                    String message = String.format(
-                            "Unable to get context '%s' from a matching method of the current CodeSection: %s %s",
-                            key,
-                            e.getCause() != null ? e.getCause().getMessage() : e.getMessage(),
-                            getDebugInfo());
-                    throw new RuntimeException(message, e);
+        for (State state : states) {
+            if (state.context.containsKey(key)) {
+                return state.context.get(key);
+            } else if (state.sectionValue != null) {
+                Method method = findContextMethod(state.sectionValue, key);
+                if (method != null) {
+                    try {
+                        return method.invoke(state.sectionValue);
+                    } catch (ReflectiveOperationException e) {
+                        String message = String.format(
+                                "Unable to get context '%s' from a matching method of the current CodeSection: %s %s",
+                                key,
+                                e.getCause() != null ? e.getCause().getMessage() : e.getMessage(),
+                                getDebugInfo());
+                        throw new RuntimeException(message, e);
+                    }
                 }
             }
         }
@@ -1949,7 +2036,10 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
         } else {
             throw new ClassCastException(String.format(
                     "Expected context value '%s' to be an instance of %s, but found %s %s",
-                    key, type.getName(), value.getClass().getName(), getDebugInfo()));
+                    key,
+                    type.getName(),
+                    value.getClass().getName(),
+                    getDebugInfo()));
         }
     }
 
@@ -1984,7 +2074,7 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
     // Used only by CodeFormatter to apply formatters.
     @SuppressWarnings("unchecked")
     String applyFormatter(char identifier, Object value) {
-        BiFunction<Object, String, String> f = currentState.formatters.peek().getFormatter(identifier);
+        BiFunction<Object, String, String> f = resolveFormatter(identifier);
         if (f != null) {
             return f.apply(value, getIndentText());
         } else if (identifier == 'C') {
@@ -2008,13 +2098,25 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
             } else {
                 throw new ClassCastException(String.format(
                         "Expected value for 'C' formatter to be an instance of %s or %s, but found %s %s",
-                        Runnable.class.getName(), Consumer.class.getName(),
-                        value.getClass().getName(), getDebugInfo()));
+                        Runnable.class.getName(),
+                        Consumer.class.getName(),
+                        value == null ? "null" : value.getClass().getName(),
+                        getDebugInfo()));
             }
         } else {
             // Return null if no formatter was found.
             return null;
         }
+    }
+
+    BiFunction<Object, String, String> resolveFormatter(char identifier) {
+        for (State state : states) {
+            BiFunction<Object, String, String> result = state.getFormatter(identifier);
+            if (result != null) {
+                return result;
+            }
+        }
+        return null;
     }
 
     private final class State {
@@ -2030,9 +2132,9 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
         private boolean needsIndentation;
 
         private CodeSection sectionValue;
-        private CopyOnWriteRef<Map<String, Object>> context;
-        private CopyOnWriteRef<CodeWriterFormatterContainer> formatters;
-        private CopyOnWriteRef<CodeInterceptorContainer<T>> interceptors;
+        private final Map<String, Object> context = new HashMap<>();
+        private final Map<Character, BiFunction<Object, String, String>> formatters = new HashMap<>();
+        private final List<CodeInterceptor<CodeSection, T>> interceptors = new ArrayList<>();
 
         private StringBuilder builder;
 
@@ -2046,11 +2148,7 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
         State() {
             builder = new StringBuilder();
             isRoot = true;
-            CodeWriterFormatterContainer formatterContainer = new CodeWriterFormatterContainer();
-            DEFAULT_FORMATTERS.forEach(formatterContainer::putFormatter);
-            this.formatters = CopyOnWriteRef.fromOwned(formatterContainer);
-            this.context = CopyOnWriteRef.fromOwned(new HashMap<>());
-            this.interceptors = CopyOnWriteRef.fromOwned(new CodeInterceptorContainer<>());
+            DEFAULT_FORMATTERS.forEach(this::putFormatter);
         }
 
         @SuppressWarnings("CopyConstructorMissesField")
@@ -2060,10 +2158,11 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
             this.builder = copy.builder;
         }
 
+        // This does not copy context, interceptors, or formatters.
+        // State inheritance relies on stacks of States in an AbstractCodeWriter.
         private void copyStateFrom(State copy) {
             this.newline = copy.newline;
             this.expressionStart = copy.expressionStart;
-            this.context = copy.context;
             this.indentText = copy.indentText;
             this.leadingIndentString = copy.leadingIndentString;
             this.indentation = copy.indentation;
@@ -2071,9 +2170,6 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
             this.trimTrailingSpaces = copy.trimTrailingSpaces;
             this.disableNewline = copy.disableNewline;
             this.needsIndentation = copy.needsIndentation;
-            this.context = CopyOnWriteRef.fromBorrowed(copy.context.peek(), HashMap::new);
-            this.formatters = CopyOnWriteRef.fromBorrowed(copy.formatters.peek(), CodeWriterFormatterContainer::new);
-            this.interceptors = CopyOnWriteRef.fromBorrowed(copy.interceptors.peek(), CodeInterceptorContainer::new);
         }
 
         @Override
@@ -2199,6 +2295,48 @@ public abstract class AbstractCodeWriter<T extends AbstractCodeWriter<T>> {
             } else {
                 return sectionValue.sectionName();
             }
+        }
+
+        void putFormatter(Character identifier, BiFunction<Object, String, String> formatFunction) {
+            if (Arrays.binarySearch(VALID_FORMATTER_CHARS, identifier) < 0) {
+                throw new IllegalArgumentException("Invalid formatter identifier: " + identifier);
+            }
+            formatters.put(identifier, formatFunction);
+        }
+
+        BiFunction<Object, String, String> getFormatter(char identifier) {
+            return formatters.get(identifier);
+        }
+
+        @SuppressWarnings("unchecked")
+        void putInterceptor(CodeInterceptor<? extends CodeSection, T> interceptor) {
+            interceptors.add((CodeInterceptor<CodeSection, T>) interceptor);
+        }
+
+        /**
+         * Gets a list of interceptors that match the given type and for which the
+         * result of {@link CodeInterceptor#isIntercepted(CodeSection)} returns true
+         * when given {@code forSection}.
+         *
+         * @param forSection The section that is being intercepted.
+         * @param <S> The type of section being intercepted.
+         * @return Returns the list of matching interceptors.
+         */
+        <S extends CodeSection> List<CodeInterceptor<CodeSection, T>> getInterceptors(S forSection) {
+            // Add in parent interceptors.
+            List<CodeInterceptor<CodeSection, T>> result = new ArrayList<>();
+            // Merge in local interceptors.
+            for (CodeInterceptor<CodeSection, T> interceptor : interceptors) {
+                // Add the interceptor only if it's the right type.
+                if (interceptor.sectionType().isInstance(forSection)) {
+                    // Only add if the filter passes.
+                    if (interceptor.isIntercepted(forSection)) {
+                        result.add(interceptor);
+                    }
+                }
+            }
+
+            return result;
         }
     }
 

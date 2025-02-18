@@ -1,18 +1,7 @@
 /*
- * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.aws.cloudformation.schema.model;
 
 import static java.lang.String.format;
@@ -60,6 +49,7 @@ public final class ResourceSchema implements ToNode, ToSmithyBuilder<ResourceSch
     private final Map<String, Handler> handlers = new TreeMap<>(Comparator.comparing(Handler::getHandlerNameOrder));
     private final Map<String, Remote> remotes = new TreeMap<>();
     private final Tagging tagging;
+    private final Schema additionalProperties;
 
     private ResourceSchema(Builder builder) {
         typeName = SmithyBuilder.requiredState("typeName", builder.typeName);
@@ -84,6 +74,7 @@ public final class ResourceSchema implements ToNode, ToSmithyBuilder<ResourceSch
         handlers.putAll(builder.handlers);
         remotes.putAll(builder.remotes);
         tagging = builder.tagging;
+        additionalProperties = builder.additionalProperties;
     }
 
     @Override
@@ -136,6 +127,9 @@ public final class ResourceSchema implements ToNode, ToSmithyBuilder<ResourceSch
         if (tagging != null) {
             builder.withMember("tagging", mapper.serialize(tagging));
         }
+        if (additionalProperties != null) {
+            builder.withMember("additionalProperties", mapper.serialize(additionalProperties));
+        }
 
         return builder.build();
     }
@@ -159,6 +153,11 @@ public final class ResourceSchema implements ToNode, ToSmithyBuilder<ResourceSch
                 .handlers(handlers)
                 .remotes(remotes)
                 .tagging(tagging);
+    }
+
+    public static ResourceSchema fromNode(Node node) {
+        NodeMapper mapper = new NodeMapper();
+        return mapper.deserializeInto(node, ResourceSchema.builder()).build();
     }
 
     public static Builder builder() {
@@ -187,6 +186,10 @@ public final class ResourceSchema implements ToNode, ToSmithyBuilder<ResourceSch
 
     public Map<String, Property> getProperties() {
         return properties;
+    }
+
+    public Set<String> getRequired() {
+        return required;
     }
 
     public Set<String> getReadOnlyProperties() {
@@ -225,6 +228,10 @@ public final class ResourceSchema implements ToNode, ToSmithyBuilder<ResourceSch
         return tagging;
     }
 
+    public Schema getAdditionalProperties() {
+        return additionalProperties;
+    }
+
     public static final class Builder implements SmithyBuilder<ResourceSchema> {
         private String typeName;
         private String description;
@@ -242,6 +249,7 @@ public final class ResourceSchema implements ToNode, ToSmithyBuilder<ResourceSch
         private final Map<String, Handler> handlers = new TreeMap<>();
         private final Map<String, Remote> remotes = new TreeMap<>();
         private Tagging tagging;
+        private Schema additionalProperties;
 
         private Builder() {}
 
@@ -468,6 +476,11 @@ public final class ResourceSchema implements ToNode, ToSmithyBuilder<ResourceSch
 
         public Builder clearRemotes() {
             this.remotes.clear();
+            return this;
+        }
+
+        public Builder additionalProperties(Schema additionalProperties) {
+            this.additionalProperties = additionalProperties;
             return this;
         }
     }

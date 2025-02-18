@@ -1,18 +1,7 @@
 /*
- * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.selector;
 
 import java.util.HashSet;
@@ -33,12 +22,12 @@ final class TopDownSelector implements InternalSelector {
     }
 
     @Override
-    public boolean push(Context context, Shape shape, Receiver next) {
+    public Response push(Context context, Shape shape, Receiver next) {
         if (shape.isServiceShape() || shape.isResourceShape() || shape.isOperationShape()) {
             return pushMatch(false, context, shape, next, new HashSet<>());
         }
 
-        return true;
+        return Response.CONTINUE;
     }
 
     // While a model can't contain recursive resource references, a custom
@@ -46,9 +35,9 @@ final class TopDownSelector implements InternalSelector {
     // recursive references. Custom validators are applied before resource
     // cycles are detected, meaning this function needs to protect against
     // recursion.
-    private boolean pushMatch(boolean qualified, Context context, Shape shape, Receiver next, Set<ShapeId> visited) {
+    private Response pushMatch(boolean qualified, Context context, Shape shape, Receiver next, Set<ShapeId> visited) {
         if (visited.contains(shape.getId())) {
-            return true;
+            return Response.CONTINUE;
         }
 
         visited.add(shape.getId());
@@ -64,8 +53,8 @@ final class TopDownSelector implements InternalSelector {
         }
 
         // If the shape is matched, then it's sent to the next receiver.
-        if (qualified && !next.apply(context, shape)) {
-            return false; // fast-fail if the receiver fast-fails.
+        if (qualified && next.apply(context, shape) == Response.STOP) {
+            return Response.STOP; // fast-fail if the receiver fast-fails.
         }
 
         // Recursively check each nested resource/operation.
@@ -73,13 +62,13 @@ final class TopDownSelector implements InternalSelector {
             if (rel.getNeighborShape().isPresent() && !rel.getNeighborShapeId().equals(shape.getId())) {
                 if (rel.getRelationshipType() == RelationshipType.RESOURCE
                         || rel.getRelationshipType() == RelationshipType.OPERATION) {
-                    if (!pushMatch(qualified, context, rel.getNeighborShape().get(), next, visited)) {
-                        return false;
+                    if (pushMatch(qualified, context, rel.getNeighborShape().get(), next, visited) == Response.STOP) {
+                        return Response.STOP;
                     }
                 }
             }
         }
 
-        return true;
+        return Response.CONTINUE;
     }
 }

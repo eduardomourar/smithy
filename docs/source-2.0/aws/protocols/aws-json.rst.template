@@ -20,6 +20,9 @@ that affect serialization:
         the hostPrefix of an endpoint trait.
     * - :ref:`timestampFormat <timestampFormat-trait>`
       - Defines a custom timestamp serialization format.
+    * - :ref:`requestCompression <requestCompression-trait>`
+      - Indicates that an operation supports compressing requests from clients
+        to services.
 
 
 ------------------
@@ -47,7 +50,7 @@ The |quoted shape name| protocol uses the following headers:
     * - ``Content-Length``
       - true
       - The standard ``Content-Length`` header defined by
-        :rfc:`7230#section-3.3.2`.
+        :rfc:`9110#section-8.6`.
     * - ``X-Amz-Target``
       - true for requests
       - The value of this header is the :token:`shape name <smithy:Identifier>` of the
@@ -124,11 +127,11 @@ to convert each shape type:
     * - ``structure``
       - JSON object. Each member value provided for the structure is
         serialized as a JSON property where the property name is the same
-        as the member name. The :ref:`jsonName-trait` can be used to serialize
-        a property using a custom name.
+        as the member name.
     * - ``union``
       - JSON object. A union is serialized identically as a ``structure``
         shape, but only a single member can be set to a non-null value.
+        Deserializers MUST ignore an unrecognized ``__type`` member if present.
 
 
 ~~~~~~~~~~~~~~~~~~~~~~~~

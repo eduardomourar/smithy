@@ -1,19 +1,10 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.openapi.fromsmithy.protocols;
+
+import static software.amazon.smithy.openapi.OpenApiConfig.ErrorStatusConflictHandlingStrategy.ONE_OF;
 
 import java.util.List;
 import java.util.Set;
@@ -25,10 +16,13 @@ import software.amazon.smithy.jsonschema.Schema;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.knowledge.HttpBinding;
 import software.amazon.smithy.model.node.Node;
+import software.amazon.smithy.model.shapes.MemberShape;
 import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.shapes.StructureShape;
+import software.amazon.smithy.model.shapes.UnionShape;
+import software.amazon.smithy.model.traits.HttpErrorTrait;
 import software.amazon.smithy.model.traits.TimestampFormatTrait;
 import software.amazon.smithy.openapi.OpenApiConfig;
 import software.amazon.smithy.openapi.fromsmithy.Context;
@@ -45,15 +39,14 @@ public final class AwsRestJson1Protocol extends AbstractRestProtocol<RestJson1Tr
             // Used by clients configured to work with X-Ray.
             "X-Amzn-Trace-Id",
             // Used by clients for adaptive retry behavior.
-            "Amz-Sdk-Request", "Amz-Sdk-Invocation-Id"
-    );
+            "Amz-Sdk-Request",
+            "Amz-Sdk-Invocation-Id");
 
     private static final Set<String> AWS_RESPONSE_HEADERS = SetUtils.of(
             // Used to identify a given request/response, primarily for debugging.
             "X-Amzn-Requestid",
             // Used to indicate which modeled error a given HTTP error represents.
-            "X-Amzn-Errortype"
-    );
+            "X-Amzn-Errortype");
 
     @Override
     public Class<RestJson1Trait> getProtocolType() {
@@ -129,7 +122,47 @@ public final class AwsRestJson1Protocol extends AbstractRestProtocol<RestJson1Tr
         }
 
         StructureShape cleanedShape = containerShapeBuilder.build();
+
+        // If errors with the same status code have been deconflicted,
+        // hoist the members from the synthetic target union and convert
+        // the error structure to a union, so that a `oneOf` can be used
+        // in the output without added nesting.
+        if (context.getConfig().getOnErrorStatusConflict() != null
+                && context.getConfig().getOnErrorStatusConflict().equals(ONE_OF)
+                && targetsSyntheticError(cleanedShape, context)) {
+            UnionShape.Builder asUnion = UnionShape.builder().id(cleanedShape.getId());
+            UnionShape targetUnion = context.getModel()
+                    .expectShape(
+                            cleanedShape.getAllMembers().values().stream().findFirst().get().getTarget(),
+                            UnionShape.class);
+            for (MemberShape member : targetUnion.getAllMembers().values()) {
+                String name = member.getMemberName();
+                asUnion.addMember(member.toBuilder().id(cleanedShape.getId().withMember(name)).build());
+            }
+            return context.getJsonSchemaConverter().convertShape(asUnion.build()).getRootSchema();
+        }
         return context.getJsonSchemaConverter().convertShape(cleanedShape).getRootSchema();
+    }
+
+    private boolean targetsSyntheticError(StructureShape shape, Context context) {
+        if (shape.hasTrait(HttpErrorTrait.ID)) {
+            HttpErrorTrait trait = shape.expectTrait(HttpErrorTrait.class);
+            String suffix = trait.getCode() + "Error";
+            if (shape.getId().getName().endsWith(suffix)) {
+                return hasSingleUnionMember(shape, context.getModel());
+            }
+        }
+        return false;
+    }
+
+    private boolean hasSingleUnionMember(StructureShape shape, Model model) {
+        long unionCount = shape.getAllMembers()
+                .values()
+                .stream()
+                .map(member -> model.expectShape(member.getTarget()))
+                .filter(Shape::isUnionShape)
+                .count();
+        return unionCount == 1;
     }
 
     @Override

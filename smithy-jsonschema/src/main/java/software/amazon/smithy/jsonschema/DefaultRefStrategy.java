@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.jsonschema;
 
 import java.util.Optional;
@@ -35,8 +24,8 @@ import software.amazon.smithy.model.traits.EnumTrait;
  *         JSON schema definition.
  *     </li>
  *     <li>
- *         <p>Members that target structures, unions, enums, and maps use a $ref to the
- *         targeted shape. With the exception of maps, these kinds of shapes are almost
+ *         <p>Members that target structures, unions, enums, intEnums, and maps use a $ref to
+ *         the targeted shape. With the exception of maps, these kinds of shapes are almost
  *         always generated as concrete types by code generators, so it's useful to reuse
  *         them throughout the schema. However, this means that member documentation
  *         and other member traits need to be moved in some way to the containing
@@ -112,11 +101,13 @@ final class DefaultRefStrategy implements RefStrategy {
                 return parentPointer + "/items";
             case MAP:
                 return member.getMemberName().equals("key")
-                       ? parentPointer + "/propertyNames"
-                       : parentPointer + "/additionalProperties";
+                        ? parentPointer + "/propertyNames"
+                        : parentPointer + "/additionalProperties";
             default: // union | structure
                 return parentPointer + "/properties/" + propertyNamingStrategy.toPropertyName(
-                        container, member, config);
+                        container,
+                        member,
+                        config);
         }
     }
 
@@ -148,6 +139,17 @@ final class DefaultRefStrategy implements RefStrategy {
             return true;
         }
 
+        // Maps are not inlined by default, but can be if configured.
+        // Maps are usually not a generated type in programming languages,
+        // but JSON schema represents them as "object" types which code
+        // generators may not distinguish from converted structures.
+        //
+        // Some code generators, however, will treat inline "object" types
+        // as maps and referenced ones as structures.
+        if (shape.isMapShape() && config.getUseInlineMaps()) {
+            return true;
+        }
+
         // Strings with the enum trait are never inlined. This helps to ensure
         // that the name of an enum string can be round-tripped from
         // Smithy -> JSON Schema -> Smithy, helps OpenAPI code generators to
@@ -157,13 +159,17 @@ final class DefaultRefStrategy implements RefStrategy {
             return false;
         }
 
+        if (shape.isIntEnumShape() && !config.getDisableIntEnums()) {
+            return false;
+        }
+
         // Simple types are always inlined unless the type has the enum trait.
         return shape instanceof SimpleShape;
     }
 
     private String stripNonAlphaNumericCharsIfNecessary(String result) {
         return config.getAlphanumericOnlyRefs()
-               ? NON_ALPHA_NUMERIC.matcher(result).replaceAll("")
-               : result;
+                ? NON_ALPHA_NUMERIC.matcher(result).replaceAll("")
+                : result;
     }
 }

@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.shapes;
 
 import java.util.AbstractMap;
@@ -24,6 +13,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
+import software.amazon.smithy.model.SourceException;
 import software.amazon.smithy.model.SourceLocation;
 import software.amazon.smithy.model.traits.Trait;
 import software.amazon.smithy.utils.ListUtils;
@@ -42,8 +32,9 @@ public final class MapShape extends Shape implements ToSmithyBuilder<MapShape> {
 
     private MapShape(Builder builder) {
         super(builder, false);
-        key = getRequiredMixinMember(builder, builder.key, "key");
-        value = getRequiredMixinMember(builder, builder.value, "value");
+        MemberShape[] members = getRequiredMembers(builder, "key", "value");
+        key = members[0];
+        value = members[1];
         validateMemberShapeIds();
     }
 
@@ -87,6 +78,17 @@ public final class MapShape extends Shape implements ToSmithyBuilder<MapShape> {
      */
     public MemberShape getKey() {
         return key;
+    }
+
+    @Override
+    public Optional<MemberShape> getMember(String memberName) {
+        if ("key".equals(memberName)) {
+            return Optional.of(key);
+        }
+        if ("value".equals(memberName)) {
+            return Optional.of(value);
+        }
+        return Optional.empty();
     }
 
     @Override
@@ -165,6 +167,17 @@ public final class MapShape extends Shape implements ToSmithyBuilder<MapShape> {
         }
 
         @Override
+        public Optional<MemberShape> getMember(String memberName) {
+            if ("key".equals(memberName)) {
+                return Optional.ofNullable(key);
+            } else if ("value".equals(memberName)) {
+                return Optional.ofNullable(value);
+            } else {
+                return Optional.empty();
+            }
+        }
+
+        @Override
         public Builder id(ShapeId shapeId) {
             // If the shape id has changed then the key and value member ids also need to be updated.
             if (key != null) {
@@ -193,7 +206,9 @@ public final class MapShape extends Shape implements ToSmithyBuilder<MapShape> {
             } else if (member.getMemberName().equals("value")) {
                 return value(member);
             } else {
-                throw new IllegalStateException("Invalid member given to MapShape builder: " + member.getId());
+                String message = String.format("Map shapes may only have `key` and `value` members, but found `%s`",
+                        member.getMemberName());
+                throw new SourceException(message, member);
             }
         }
 

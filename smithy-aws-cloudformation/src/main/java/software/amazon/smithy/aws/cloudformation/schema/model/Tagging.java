@@ -1,20 +1,13 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.aws.cloudformation.schema.model;
 
+import java.util.Collection;
+import java.util.Set;
+import java.util.TreeSet;
+import software.amazon.smithy.utils.SetUtils;
 import software.amazon.smithy.utils.SmithyBuilder;
 import software.amazon.smithy.utils.ToSmithyBuilder;
 
@@ -27,6 +20,7 @@ public final class Tagging implements ToSmithyBuilder<Tagging> {
     private final boolean tagUpdatable;
     private final String tagProperty;
     private final boolean cloudFormationSystemTags;
+    private final Set<String> permissions;
 
     private Tagging(Builder builder) {
         taggable = builder.taggable;
@@ -34,6 +28,7 @@ public final class Tagging implements ToSmithyBuilder<Tagging> {
         tagUpdatable = builder.tagUpdatable;
         cloudFormationSystemTags = builder.cloudFormationSystemTags;
         tagProperty = builder.tagProperty;
+        this.permissions = SetUtils.orderedCopyOf(builder.permissions);
     }
 
     public static Builder builder() {
@@ -85,6 +80,15 @@ public final class Tagging implements ToSmithyBuilder<Tagging> {
         return tagProperty;
     }
 
+    /**
+     * Returns the set of permissions required to interact with this resource's tags.
+     *
+     * @return the set of permissions.
+     */
+    public Set<String> getPermissions() {
+        return permissions;
+    }
+
     @Override
     public Builder toBuilder() {
         return builder()
@@ -92,7 +96,8 @@ public final class Tagging implements ToSmithyBuilder<Tagging> {
                 .tagOnCreate(tagOnCreate)
                 .tagUpdatable(tagUpdatable)
                 .cloudFormationSystemTags(cloudFormationSystemTags)
-                .tagProperty(tagProperty);
+                .tagProperty(tagProperty)
+                .permissions(permissions);
     }
 
     public static final class Builder implements SmithyBuilder<Tagging> {
@@ -101,6 +106,7 @@ public final class Tagging implements ToSmithyBuilder<Tagging> {
         private boolean tagUpdatable;
         private boolean cloudFormationSystemTags;
         private String tagProperty;
+        private final Set<String> permissions = new TreeSet<>();
 
         @Override
         public Tagging build() {
@@ -129,6 +135,29 @@ public final class Tagging implements ToSmithyBuilder<Tagging> {
 
         public Builder tagProperty(String tagProperty) {
             this.tagProperty = tagProperty;
+            return this;
+        }
+
+        public Builder permissions(Collection<String> permissions) {
+            this.permissions.clear();
+            this.permissions.addAll(permissions);
+            return this;
+        }
+
+        public Builder addPermissions(Collection<String> permissions) {
+            for (String permission : permissions) {
+                addPermission(permission);
+            }
+            return this;
+        }
+
+        public Builder addPermission(String permission) {
+            this.permissions.add(permission);
+            return this;
+        }
+
+        public Builder clearPermissions() {
+            this.permissions.clear();
             return this;
         }
     }

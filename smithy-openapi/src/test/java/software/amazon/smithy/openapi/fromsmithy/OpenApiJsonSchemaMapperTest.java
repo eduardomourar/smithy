@@ -1,22 +1,10 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.openapi.fromsmithy;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -31,22 +19,24 @@ import software.amazon.smithy.jsonschema.SchemaDocument;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.node.ObjectNode;
+import software.amazon.smithy.model.node.StringNode;
 import software.amazon.smithy.model.shapes.BlobShape;
 import software.amazon.smithy.model.shapes.ByteShape;
 import software.amazon.smithy.model.shapes.DoubleShape;
 import software.amazon.smithy.model.shapes.FloatShape;
 import software.amazon.smithy.model.shapes.IntegerShape;
 import software.amazon.smithy.model.shapes.LongShape;
-import software.amazon.smithy.model.shapes.MapShape;
-import software.amazon.smithy.model.shapes.MemberShape;
 import software.amazon.smithy.model.shapes.ShortShape;
 import software.amazon.smithy.model.shapes.StringShape;
 import software.amazon.smithy.model.shapes.StructureShape;
-import software.amazon.smithy.model.traits.BoxTrait;
 import software.amazon.smithy.model.traits.DeprecatedTrait;
+import software.amazon.smithy.model.traits.DocumentationTrait;
+import software.amazon.smithy.model.traits.DynamicTrait;
 import software.amazon.smithy.model.traits.ExternalDocumentationTrait;
 import software.amazon.smithy.model.traits.SensitiveTrait;
+import software.amazon.smithy.model.traits.TraitDefinition;
 import software.amazon.smithy.openapi.OpenApiConfig;
+import software.amazon.smithy.openapi.traits.SpecificationExtensionTrait;
 import software.amazon.smithy.utils.ListUtils;
 
 public class OpenApiJsonSchemaMapperTest {
@@ -65,23 +55,6 @@ public class OpenApiJsonSchemaMapperTest {
                 .convert();
 
         assertTrue(document.toNode().expectObjectNode().getMember("components").isPresent());
-    }
-
-    @Test
-    public void stripsUnsupportedKeywords() {
-        StringShape string = StringShape.builder().id("smithy.api#String").build();
-        MemberShape key = MemberShape.builder().id("smithy.example#Map$key").target("smithy.api#String").build();
-        MemberShape value = MemberShape.builder().id("smithy.example#Map$value").target("smithy.api#String").build();
-        MapShape shape = MapShape.builder().id("smithy.example#Map").key(key).value(value).build();
-        Model model = Model.builder().addShapes(string, shape, key, value).build();
-        SchemaDocument document = JsonSchemaConverter.builder()
-                .addMapper(new OpenApiJsonSchemaMapper())
-                .model(model)
-                .build()
-                .convertShape(shape);
-        Schema schema = document.getRootSchema();
-
-        assertFalse(schema.getPropertyNames().isPresent());
     }
 
     @Test
@@ -147,6 +120,26 @@ public class OpenApiJsonSchemaMapperTest {
     }
 
     @Test
+    public void appendsDeprecatedInfoInDescription() {
+        String message = "Use a.b#D instead.";
+        String since = "2020-01-01";
+        IntegerShape shape = IntegerShape.builder()
+                .id("a.b#C")
+                .addTrait(DeprecatedTrait.builder().message(message).since(since).build())
+                .addTrait(new DocumentationTrait("This is an integer."))
+                .build();
+        Model model = Model.builder().addShape(shape).build();
+        SchemaDocument document = JsonSchemaConverter.builder()
+                .addMapper(new OpenApiJsonSchemaMapper())
+                .model(model)
+                .build()
+                .convertShape(shape);
+
+        String expected = "This is an integer.\nThis shape is deprecated since 2020-01-01: Use a.b#D instead.";
+        assertThat(document.getRootSchema().getDescription().get(), equalTo(expected));
+    }
+
+    @Test
     public void supportsInt32() {
         IntegerShape shape = IntegerShape.builder().id("a.b#C").build();
         Model model = Model.builder().addShape(shape).build();
@@ -176,6 +169,29 @@ public class OpenApiJsonSchemaMapperTest {
                 .convertShape(shape);
 
         assertThat(document.getRootSchema().getFormat().get(), equalTo("int64"));
+    }
+
+    @Test
+    public void canDisableIntegerFormats() {
+        IntegerShape integerShape = IntegerShape.builder().id("a.b#C").build();
+        LongShape longShape = LongShape.builder().id("a.b#D").build();
+        Model model = Model.builder().addShapes(integerShape, longShape).build();
+        OpenApiConfig config = new OpenApiConfig();
+        config.setUseIntegerType(true);
+        config.setDisableIntegerFormat(true);
+        JsonSchemaConverter converter = JsonSchemaConverter.builder()
+                .addMapper(new OpenApiJsonSchemaMapper())
+                .config(config)
+                .model(model)
+                .build();
+
+        SchemaDocument integerDocument = converter.convertShape(integerShape);
+        SchemaDocument longDocument = converter.convertShape(longShape);
+
+        assertThat(integerDocument.getRootSchema().getFormat().isPresent(), equalTo(false));
+        assertThat(integerDocument.getRootSchema().getType().get(), equalTo("integer"));
+        assertThat(longDocument.getRootSchema().getFormat().isPresent(), equalTo(false));
+        assertThat(longDocument.getRootSchema().getType().get(), equalTo("integer"));
     }
 
     @Test
@@ -365,5 +381,39 @@ public class OpenApiJsonSchemaMapperTest {
                 .convertShape(shape);
 
         assertThat(document.getRootSchema().getFormat().get(), equalTo("password"));
+    }
+
+    @Test
+    public void supportsSpecificationExtensionTrait() {
+        StringShape extensionTraitShape = StringShape.builder()
+                .id("a.b#extensionTrait")
+                .addTrait(TraitDefinition.builder().build())
+                .addTrait(SpecificationExtensionTrait.builder().as("x-important-metadata").build())
+                .build();
+        DynamicTrait extensionTraitInstance =
+                new DynamicTrait(extensionTraitShape.getId(), StringNode.from("string content"));
+        IntegerShape integerShape = IntegerShape.builder().id("a.b#Integer").build();
+        StructureShape structure = StructureShape.builder()
+                .id("a.b#Struct")
+                .addTrait(extensionTraitInstance)
+                .addMember("c", integerShape.getId())
+                .build();
+
+        Model model = Model.builder().addShapes(extensionTraitShape, integerShape, structure).build();
+
+        SchemaDocument document = JsonSchemaConverter.builder()
+                .addMapper(new OpenApiJsonSchemaMapper())
+                .model(model)
+                .build()
+                .convertShape(structure);
+
+        assertThat(
+                document.getRootSchema()
+                        .getExtension("x-important-metadata")
+                        .get()
+                        .toNode()
+                        .expectStringNode()
+                        .getValue(),
+                equalTo("string content"));
     }
 }

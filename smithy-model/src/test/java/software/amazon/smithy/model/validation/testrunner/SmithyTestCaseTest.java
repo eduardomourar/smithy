@@ -1,23 +1,13 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.validation.testrunner;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Collections;
 import org.junit.jupiter.api.Assertions;
@@ -32,14 +22,17 @@ import software.amazon.smithy.utils.ListUtils;
 public class SmithyTestCaseTest {
     @Test
     public void validatesThatEventsAreValid() {
-        Assertions.assertThrows(
+        IllegalArgumentException e = Assertions.assertThrows(
                 IllegalArgumentException.class,
-                () -> SmithyTestCase.parseValidationEvent("[ERROR] - m"));
+                () -> SmithyTestCase.parseValidationEvent("[ERROR] - m", "filename"));
+
+        assertTrue(e.getMessage().contains("`filename`"));
+        assertTrue(e.getMessage().contains("SUPPRESSED|NOTE|WARNING|DANGER|ERROR"));
     }
 
     @Test
     public void parsesValidEvents() {
-        SmithyTestCase.parseValidationEvent("[ERROR] -: message | EventId /filename:0:0");
+        SmithyTestCase.parseValidationEvent("[ERROR] -: message | EventId /filename:0:0", "filename");
     }
 
     @Test
@@ -128,20 +121,21 @@ public class SmithyTestCaseTest {
                 ListUtils.of(e1, e2),
                 ListUtils.of(e1, e2));
 
-        assertThat(result.toString(), equalTo("=======================\n"
-                                              + "Model Validation Result\n"
-                                              + "=======================\n"
-                                              + "/foo/bar.json\n"
-                                              + "\n"
-                                              + "Did not match the following events\n"
-                                              + "----------------------------------\n"
-                                              + "[DANGER] foo.baz#Bar: a | FooBar N/A:0:0\n"
-                                              + "[DANGER] foo.baz#Bar: b | FooBar N/A:0:0\n"
-                                              + "\n"
-                                              + "\n"
-                                              + "Encountered unexpected events\n"
-                                              + "-----------------------------\n"
-                                              + "[DANGER] foo.baz#Bar: a | FooBar N/A:0:0\n"
-                                              + "[DANGER] foo.baz#Bar: b | FooBar N/A:0:0\n\n"));
+        assertThat(result.toString(),
+                equalTo("=======================\n"
+                        + "Model Validation Result\n"
+                        + "=======================\n"
+                        + "/foo/bar.json\n"
+                        + "\n"
+                        + "Did not match the following events\n"
+                        + "----------------------------------\n"
+                        + "[DANGER] foo.baz#Bar: a | FooBar N/A:0:0\n"
+                        + "[DANGER] foo.baz#Bar: b | FooBar N/A:0:0\n"
+                        + "\n"
+                        + "\n"
+                        + "Encountered unexpected events\n"
+                        + "-----------------------------\n"
+                        + "[DANGER] foo.baz#Bar: a | FooBar N/A:0:0\n"
+                        + "[DANGER] foo.baz#Bar: b | FooBar N/A:0:0\n\n"));
     }
 }

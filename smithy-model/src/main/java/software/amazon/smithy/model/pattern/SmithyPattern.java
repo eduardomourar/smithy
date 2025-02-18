@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.pattern;
 
 import static java.lang.String.format;
@@ -54,9 +43,7 @@ public class SmithyPattern {
         segments = Objects.requireNonNull(builder.segments);
 
         checkForDuplicateLabels();
-        if (builder.allowsGreedyLabels) {
-            checkForLabelsAfterGreedyLabels();
-        } else if (segments.stream().anyMatch(Segment::isGreedyLabel)) {
+        if (!builder.allowsGreedyLabels && segments.stream().anyMatch(Segment::isGreedyLabel)) {
             throw new InvalidPatternException("Pattern must not contain a greedy label. Found " + pattern);
         }
     }
@@ -89,9 +76,9 @@ public class SmithyPattern {
     public final Optional<Segment> getLabel(String name) {
         String searchKey = name.toLowerCase(Locale.US);
         return segments.stream()
-                       .filter(Segment::isLabel)
-                       .filter(label -> label.getContent().toLowerCase(Locale.US).equals(searchKey))
-                       .findFirst();
+                .filter(Segment::isLabel)
+                .filter(label -> label.getContent().toLowerCase(Locale.US).equals(searchKey))
+                .findFirst();
     }
 
     /**
@@ -136,7 +123,7 @@ public class SmithyPattern {
                 // The segments conflict if one is a literal and the other
                 // is a label.
                 conflictingSegments.put(thisSegment, otherSegment);
-            } else if  (thisSegment.isGreedyLabel() != otherSegment.isGreedyLabel()) {
+            } else if (thisSegment.isGreedyLabel() != otherSegment.isGreedyLabel()) {
                 // The segments conflict if a greedy label is introduced at
                 // or before segments in the other pattern.
                 conflictingSegments.put(thisSegment, otherSegment);
@@ -162,28 +149,10 @@ public class SmithyPattern {
         segments.forEach(segment -> {
             if (segment.isLabel() && !labels.add(segment.getContent().toLowerCase(Locale.US))) {
                 throw new InvalidPatternException(format("Label `%s` is defined more than once in pattern: %s",
-                        segment.getContent(), pattern));
+                        segment.getContent(),
+                        pattern));
             }
         });
-    }
-
-    private void checkForLabelsAfterGreedyLabels() {
-        // Make sure at most one greedy label exists, and that it is the
-        // last label segment.
-        for (int i = 0; i < segments.size(); i++) {
-            Segment s = segments.get(i);
-            if (s.isGreedyLabel()) {
-                for (int j = i + 1; j < segments.size(); j++) {
-                    if (segments.get(j).isGreedyLabel()) {
-                        throw new InvalidPatternException(
-                                "At most one greedy label segment may exist in a pattern: " + pattern);
-                    } else if (segments.get(j).isLabel()) {
-                        throw new InvalidPatternException(
-                                "A greedy label must be the last label in its pattern: " + pattern);
-                    }
-                }
-            }
-        }
     }
 
     /**
@@ -228,17 +197,23 @@ public class SmithyPattern {
      */
     public static final class Segment {
 
-        public enum Type { LITERAL, LABEL, GREEDY_LABEL }
+        public enum Type {
+            LITERAL, LABEL, GREEDY_LABEL
+        }
 
         private final String asString;
         private final String content;
         private final Type segmentType;
 
         public Segment(String content, Type segmentType) {
+            this(content, segmentType, null);
+        }
+
+        public Segment(String content, Type segmentType, Integer offset) {
             this.content = Objects.requireNonNull(content);
             this.segmentType = segmentType;
 
-            checkForInvalidContents();
+            checkForInvalidContents(offset);
 
             if (segmentType == Type.GREEDY_LABEL) {
                 asString = "{" + content + "+}";
@@ -249,19 +224,25 @@ public class SmithyPattern {
             }
         }
 
-        private void checkForInvalidContents() {
+        private void checkForInvalidContents(Integer offset) {
+            String offsetString = "";
+            if (offset != null) {
+                offsetString += " at index " + offset;
+            }
             if (segmentType == Type.LITERAL) {
                 if (content.isEmpty()) {
-                    throw new InvalidPatternException("Segments must not be empty");
+                    throw new InvalidPatternException("Segments must not be empty" + offsetString);
                 } else if (content.contains("{") || content.contains("}")) {
                     throw new InvalidPatternException(
-                            "Literal segments must not contain `{` or `}` characters. Found segment `" + content + "`");
+                            "Literal segments must not contain `{` or `}` characters. Found segment `"
+                                    + content + "`" + offsetString);
                 }
             } else if (content.isEmpty()) {
-                throw new InvalidPatternException("Empty label declaration in pattern.");
+                throw new InvalidPatternException("Empty label declaration in pattern" + offsetString + ".");
             } else if (!ShapeId.isValidIdentifier(content)) {
                 throw new InvalidPatternException(
-                        "Invalid label name in pattern: '" + content + "'. Labels must contain value identifiers.");
+                        "Invalid label name in pattern: '" + content + "'" + offsetString
+                                + ". Labels must contain value identifiers.");
             }
         }
 
@@ -269,7 +250,7 @@ public class SmithyPattern {
          * Parse a segment from the given offset.
          *
          * @param content Content of the segment.
-         * @param offset Character offset where the segment starts.
+         * @param offset Character offset where the segment starts in the containing pattern.
          * @return Returns the created segment.
          * @throws InvalidPatternException if the segment is invalid.
          */
@@ -277,11 +258,11 @@ public class SmithyPattern {
             if (content.length() >= 2 && content.charAt(0) == '{' && content.charAt(content.length() - 1) == '}') {
                 Type labelType = content.charAt(content.length() - 2) == '+' ? Type.GREEDY_LABEL : Type.LABEL;
                 content = labelType == Type.GREEDY_LABEL
-                          ? content.substring(1, content.length() - 2)
-                          : content.substring(1, content.length() - 1);
-                return new Segment(content, labelType);
+                        ? content.substring(1, content.length() - 2)
+                        : content.substring(1, content.length() - 1);
+                return new Segment(content, labelType, offset);
             } else {
-                return new Segment(content, Type.LITERAL);
+                return new Segment(content, Type.LITERAL, offset);
             }
         }
 
@@ -300,10 +281,24 @@ public class SmithyPattern {
         }
 
         /**
-         * @return True if the segment is a label.
+         * @return True if the segment is a non-label literal.
+         */
+        public boolean isLiteral() {
+            return segmentType == Type.LITERAL;
+        }
+
+        /**
+         * @return True if the segment is a label regardless of whether is greedy or not.
          */
         public boolean isLabel() {
             return segmentType != Type.LITERAL;
+        }
+
+        /**
+         * @return True if the segment is a non-greedy label.
+         */
+        public boolean isNonGreedyLabel() {
+            return segmentType == Type.LABEL;
         }
 
         /**

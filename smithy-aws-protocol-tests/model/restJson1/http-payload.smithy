@@ -1,4 +1,5 @@
 // This file defines test cases that test HTTP payload bindings.
+// Note that string payloads are tested in `http-string-payload.smithy`.
 // See: https://smithy.io/2.0/spec/http-bindings.html#httppayload-trait
 
 $version: "2.0"
@@ -6,11 +7,12 @@ $version: "2.0"
 namespace aws.protocoltests.restjson
 
 use aws.protocols#restJson1
+use smithy.test#httpMalformedRequestTests
 use aws.protocoltests.shared#TextPlainBlob
 use smithy.test#httpRequestTests
 use smithy.test#httpResponseTests
 
-/// This examples serializes a blob shape in the payload.
+/// This example serializes a blob shape in the payload.
 ///
 /// In this example, no JSON document is synthesized because the payload is
 /// not a structure or a union type.
@@ -77,6 +79,26 @@ apply HttpPayloadTraits @httpRequestTests([
         appliesTo: "server",
     },
     {
+        id: "RestJsonHttpPayloadTraitsWithBlobAcceptsNoContentType",
+        documentation: """
+            Servers must accept no content type for blob inputs
+            without the media type trait.""",
+        protocol: restJson1,
+        method: "POST",
+        uri: "/HttpPayloadTraits",
+        body: "This is definitely a jpeg",
+        bodyMediaType: "application/octet-stream",
+        headers: {
+            "X-Foo": "Foo",
+        },
+        params: {
+            foo: "Foo",
+            blob: "This is definitely a jpeg"
+        },
+        appliesTo: "server",
+        tags: [ "content-type" ]
+    },
+    {
         id: "RestJsonHttpPayloadTraitsWithBlobAcceptsAllAccepts",
         documentation: """
             Servers must accept any accept header for blob inputs
@@ -138,7 +160,7 @@ structure HttpPayloadTraitsInputOutput {
     blob: Blob,
 }
 
-/// This examples uses a `@mediaType` trait on the payload to force a custom
+/// This example uses a `@mediaType` trait on the payload to force a custom
 /// content-type to be serialized.
 @http(uri: "/HttpPayloadTraitsWithMediaType", method: "POST")
 operation HttpPayloadTraitsWithMediaType {
@@ -196,7 +218,7 @@ structure HttpPayloadTraitsWithMediaTypeInputOutput {
     blob: TextPlainBlob,
 }
 
-/// This examples serializes a structure in the payload.
+/// This example serializes a structure in the payload.
 ///
 /// Note that serializing a structure changes the wrapper element name
 /// to match the targeted structure.
@@ -267,4 +289,89 @@ structure HttpPayloadWithStructureInputOutput {
 structure NestedPayload {
     greeting: String,
     name: String,
+}
+
+/// This example serializes a union in the payload.
+@idempotent
+@http(uri: "/HttpPayloadWithUnion", method: "PUT")
+operation HttpPayloadWithUnion {
+    input: HttpPayloadWithUnionInputOutput,
+    output: HttpPayloadWithUnionInputOutput
+}
+
+apply HttpPayloadWithUnion @httpRequestTests([
+    {
+        id: "RestJsonHttpPayloadWithUnion",
+        documentation: "Serializes a union in the payload.",
+        protocol: restJson1,
+        method: "PUT",
+        uri: "/HttpPayloadWithUnion",
+        body: """
+              {
+                  "greeting": "hello"
+              }""",
+        bodyMediaType: "application/json",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        requireHeaders: [
+            "Content-Length"
+        ],
+        params: {
+            nested: {
+                greeting: "hello"
+            }
+        }
+    },
+    {
+        id: "RestJsonHttpPayloadWithUnsetUnion",
+        documentation: "No payload is sent if the union has no value.",
+        protocol: restJson1,
+        method: "PUT",
+        uri: "/HttpPayloadWithUnion",
+        body: "",
+        params: {}
+    }
+])
+
+apply HttpPayloadWithUnion @httpResponseTests([
+    {
+        id: "RestJsonHttpPayloadWithUnion",
+        documentation: "Serializes a union in the payload.",
+        protocol: restJson1,
+        code: 200,
+        body: """
+              {
+                  "greeting": "hello"
+              }""",
+        bodyMediaType: "application/json",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        params: {
+            nested: {
+                greeting: "hello"
+            }
+        }
+    },
+    {
+        id: "RestJsonHttpPayloadWithUnsetUnion",
+        documentation: "No payload is sent if the union has no value.",
+        protocol: restJson1,
+        code: 200,
+        body: "",
+        headers: {
+            "Content-Length": "0"
+        },
+        params: {}
+    }
+])
+
+structure HttpPayloadWithUnionInputOutput {
+    @httpPayload
+    nested: UnionPayload,
+}
+
+union UnionPayload {
+    greeting: String
 }

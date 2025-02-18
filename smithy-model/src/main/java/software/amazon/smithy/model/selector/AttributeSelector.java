@@ -1,18 +1,7 @@
 /*
- * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.selector;
 
 import java.util.ArrayList;
@@ -34,6 +23,7 @@ final class AttributeSelector implements InternalSelector {
     private final List<AttributeValue> expected;
     private final AttributeComparator comparator;
     private final boolean caseInsensitive;
+    private final Function<Model, Collection<? extends Shape>> optimizer;
 
     AttributeSelector(
             List<String> path,
@@ -54,6 +44,23 @@ final class AttributeSelector implements InternalSelector {
                 this.expected.add(AttributeValue.literal(validValue));
             }
         }
+
+        // Optimization for loading shapes with a specific trait.
+        // This optimization can only be applied when there's no comparator,
+        // and it doesn't matter how deep into the trait the selector descends.
+        if (comparator == null
+                && path.size() >= 2
+                && path.get(0).equals("trait") // only match on traits
+                && !path.get(1).startsWith("(")) { // don't match projections
+            optimizer = model -> {
+                // The trait name might be relative to the prelude, so ensure it's absolute.
+                String absoluteShapeId = Trait.makeAbsoluteName(path.get(1));
+                ShapeId trait = ShapeId.from(absoluteShapeId);
+                return model.getShapesWithTrait(trait);
+            };
+        } else {
+            optimizer = Model::toSet;
+        }
     }
 
     static AttributeSelector existence(List<String> path) {
@@ -61,31 +68,16 @@ final class AttributeSelector implements InternalSelector {
     }
 
     @Override
-    public Function<Model, Collection<? extends Shape>> optimize() {
-        // Optimization for loading shapes with a specific trait.
-        // This optimization can only be applied when there's no comparator,
-        // and it doesn't matter how deep into the trait the selector descends.
-        if (comparator == null
-                && path.size() >= 2
-                && path.get(0).equals("trait")     // only match on traits
-                && !path.get(1).startsWith("(")) { // don't match projections
-            return model -> {
-                // The trait name might be relative to the prelude, so ensure it's absolute.
-                String absoluteShapeId = Trait.makeAbsoluteName(path.get(1));
-                ShapeId trait = ShapeId.from(absoluteShapeId);
-                return model.getShapesWithTrait(trait);
-            };
-        } else {
-            return null;
-        }
+    public Collection<? extends Shape> getStartingShapes(Model model) {
+        return optimizer.apply(model);
     }
 
     @Override
-    public boolean push(Context context, Shape shape, Receiver next) {
+    public Response push(Context context, Shape shape, Receiver next) {
         if (matchesAttribute(shape, context)) {
             return next.apply(context, shape);
         } else {
-            return true;
+            return Response.CONTINUE;
         }
     }
 

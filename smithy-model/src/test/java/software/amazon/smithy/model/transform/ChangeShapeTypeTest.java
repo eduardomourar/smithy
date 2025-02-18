@@ -1,18 +1,7 @@
 /*
- * Copyright 2021 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.transform;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -46,6 +35,8 @@ import software.amazon.smithy.model.traits.DocumentationTrait;
 import software.amazon.smithy.model.traits.EnumDefinition;
 import software.amazon.smithy.model.traits.EnumTrait;
 import software.amazon.smithy.model.traits.EnumValueTrait;
+import software.amazon.smithy.model.traits.InternalTrait;
+import software.amazon.smithy.model.traits.TagsTrait;
 import software.amazon.smithy.model.traits.UnitTypeTrait;
 import software.amazon.smithy.model.traits.synthetic.SyntheticEnumTrait;
 import software.amazon.smithy.utils.ListUtils;
@@ -207,7 +198,7 @@ public class ChangeShapeTypeTest {
         assertThat(result.expectShape(id).getSourceLocation(), Matchers.equalTo(source));
         assertThat(result.expectShape(id).members(), Matchers.hasSize(1));
         assertThat(result.expectShape(id).members().iterator().next(),
-                   Matchers.equalTo(startShape.members().iterator().next()));
+                Matchers.equalTo(startShape.members().iterator().next()));
     }
 
     @Test
@@ -229,7 +220,7 @@ public class ChangeShapeTypeTest {
         assertThat(result.expectShape(id).getSourceLocation(), Matchers.equalTo(source));
         assertThat(result.expectShape(id).members(), Matchers.hasSize(1));
         assertThat(result.expectShape(id).members().iterator().next(),
-                   Matchers.equalTo(startShape.members().iterator().next()));
+                Matchers.equalTo(startShape.members().iterator().next()));
     }
 
     @Test
@@ -269,6 +260,7 @@ public class ChangeShapeTypeTest {
                 .addEnum(EnumDefinition.builder()
                         .name("foo")
                         .value("bar")
+                        .addTag("internal")
                         .build())
                 .build();
         SourceLocation source = new SourceLocation("/foo", 1, 1);
@@ -280,15 +272,17 @@ public class ChangeShapeTypeTest {
                 .build();
         Model model = Model.assembler().addShape(startShape).assemble().unwrap();
         Model result = ModelTransformer.create().changeShapeType(model, MapUtils.of(id, ShapeType.ENUM));
-
         assertThat(result.expectShape(id).getType(), Matchers.is(ShapeType.ENUM));
         assertThat(result.expectShape(id).getSourceLocation(), Matchers.equalTo(source));
         assertThat(result.expectShape(id).members(), Matchers.hasSize(1));
-        assertThat(result.expectShape(id).members().iterator().next(), Matchers.equalTo(MemberShape.builder()
-                .id(id.withMember("foo"))
-                .target(UnitTypeTrait.UNIT)
-                .addTrait(EnumValueTrait.builder().stringValue("bar").build())
-                .build()));
+        assertThat(result.expectShape(id).members().iterator().next(),
+                Matchers.equalTo(MemberShape.builder()
+                        .id(id.withMember("foo"))
+                        .target(UnitTypeTrait.UNIT)
+                        .addTrait(EnumValueTrait.builder().stringValue("bar").build())
+                        .addTrait(new InternalTrait())
+                        .addTrait(TagsTrait.builder().addValue("internal").build())
+                        .build()));
     }
 
     @Test
@@ -350,12 +344,12 @@ public class ChangeShapeTypeTest {
         EnumTrait trait = result.expectShape(id).expectTrait(EnumTrait.class);
         assertFalse(trait instanceof SyntheticEnumTrait);
 
-        assertThat(trait.getValues(), Matchers.equalTo(ListUtils.of(
-                EnumDefinition.builder()
-                        .name("FOO")
-                        .value("foo")
-                        .build()
-        )));
+        assertThat(trait.getValues(),
+                Matchers.equalTo(ListUtils.of(
+                        EnumDefinition.builder()
+                                .name("FOO")
+                                .value("foo")
+                                .build())));
     }
 
     @Test
@@ -383,20 +377,21 @@ public class ChangeShapeTypeTest {
                 .addTrait(incompatibleTrait)
                 .build();
 
-
         Model model = Model.assembler()
                 .addShape(compatibleString)
                 .addShape(incompatibleString)
-                .assemble().unwrap();
+                .assemble()
+                .unwrap();
         Model result = ModelTransformer.create().changeStringEnumsToEnumShapes(model);
 
         assertThat(result.expectShape(compatibleStringId).getType(), Matchers.is(ShapeType.ENUM));
         assertThat(result.expectShape(compatibleStringId).members(), Matchers.hasSize(1));
-        assertThat(result.expectShape(compatibleStringId).members().iterator().next(), Matchers.equalTo(MemberShape.builder()
-                .id(compatibleStringId.withMember("foo"))
-                .target(UnitTypeTrait.UNIT)
-                .addTrait(EnumValueTrait.builder().stringValue("bar").build())
-                .build()));
+        assertThat(result.expectShape(compatibleStringId).members().iterator().next(),
+                Matchers.equalTo(MemberShape.builder()
+                        .id(compatibleStringId.withMember("foo"))
+                        .target(UnitTypeTrait.UNIT)
+                        .addTrait(EnumValueTrait.builder().stringValue("bar").build())
+                        .build()));
 
         assertThat(result.expectShape(incompatibleStringId).getType(), Matchers.is(ShapeType.STRING));
         assertThat(result.expectShape(incompatibleStringId).members(), Matchers.hasSize(0));
@@ -417,16 +412,18 @@ public class ChangeShapeTypeTest {
 
         Model model = Model.assembler()
                 .addShape(initialShape)
-                .assemble().unwrap();
+                .assemble()
+                .unwrap();
         Model result = ModelTransformer.create().changeStringEnumsToEnumShapes(model, true);
 
         assertThat(result.expectShape(shapeId).getType(), Matchers.is(ShapeType.ENUM));
         assertThat(result.expectShape(shapeId).members(), Matchers.hasSize(1));
-        assertThat(result.expectShape(shapeId).members().iterator().next(), Matchers.equalTo(MemberShape.builder()
-                .id(shapeId.withMember("foo_bar"))
-                .target(UnitTypeTrait.UNIT)
-                .addTrait(EnumValueTrait.builder().stringValue("foo:bar").build())
-                .build()));
+        assertThat(result.expectShape(shapeId).members().iterator().next(),
+                Matchers.equalTo(MemberShape.builder()
+                        .id(shapeId.withMember("foo_bar"))
+                        .target(UnitTypeTrait.UNIT)
+                        .addTrait(EnumValueTrait.builder().stringValue("foo:bar").build())
+                        .build()));
     }
 
     @Test
@@ -439,7 +436,8 @@ public class ChangeShapeTypeTest {
 
         Model model = Model.assembler()
                 .addShapes(stringEnum, intEnum)
-                .assemble().unwrap();
+                .assemble()
+                .unwrap();
         Model result = ModelTransformer.create().downgradeEnums(model);
 
         assertThat(result.expectShape(stringEnum.getId()).getType(), Matchers.is(ShapeType.STRING));
@@ -447,11 +445,11 @@ public class ChangeShapeTypeTest {
 
         EnumTrait trait = result.expectShape(stringEnum.getId()).expectTrait(EnumTrait.class);
         assertFalse(trait instanceof SyntheticEnumTrait);
-        assertThat(trait.getValues(), Matchers.equalTo(ListUtils.of(
-                EnumDefinition.builder()
-                        .name("FOO")
-                        .value("foo")
-                        .build()
-        )));
+        assertThat(trait.getValues(),
+                Matchers.equalTo(ListUtils.of(
+                        EnumDefinition.builder()
+                                .name("FOO")
+                                .value("foo")
+                                .build())));
     }
 }

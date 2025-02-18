@@ -1,18 +1,7 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.cli;
 
 import java.util.ArrayList;
@@ -129,7 +118,7 @@ public final class HelpPrinter {
         LineWrapper builder = new LineWrapper(maxWidth);
 
         builder.appendWithinLine("Usage: ")
-                .appendWithinLine(colors.style(name, Style.BRIGHT_WHITE, Style.UNDERLINE))
+                .appendWithinLine(colors.style(name, ColorTheme.EM_UNDERLINE))
                 .space();
 
         // Calculate the column manually to account for possible styles interfering with the current column number.
@@ -168,13 +157,13 @@ public final class HelpPrinter {
 
     private void writeArgHelp(ColorFormatter colors, LineWrapper builder, Arg arg) {
         if (arg.longName != null) {
-            builder.appendWithinLine(colors.style(arg.longName, Style.YELLOW));
+            builder.appendWithinLine(colors.style(arg.longName, ColorTheme.LITERAL));
             if (arg.shortName != null) {
                 builder.appendWithinLine(", ");
             }
         }
         if (arg.shortName != null) {
-            builder.appendWithinLine(colors.style(arg.shortName, Style.YELLOW));
+            builder.appendWithinLine(colors.style(arg.shortName, ColorTheme.LITERAL));
         }
         if (arg.exampleValue != null) {
             builder.space().appendWithinLine(arg.exampleValue);
@@ -213,13 +202,13 @@ public final class HelpPrinter {
             StringBuilder builder = new StringBuilder();
             builder.append('[');
             if (longName != null) {
-                builder.append(colors.style(longName, Style.YELLOW));
+                builder.append(colors.style(longName, ColorTheme.LITERAL));
                 if (shortName != null) {
                     builder.append(" | ");
                 }
             }
             if (shortName != null) {
-                builder.append(colors.style(shortName, Style.YELLOW));
+                builder.append(colors.style(shortName, ColorTheme.LITERAL));
             }
             if (exampleValue != null) {
                 builder.append(' ').append(exampleValue);
@@ -260,6 +249,12 @@ public final class HelpPrinter {
         LineWrapper appendWithinLine(String text) {
             if (column + text.length() > maxLength) {
                 newLine();
+                // If the text starts with a space, then eat the space since it isn't needed to separate words now.
+                if (text.startsWith(" ")) {
+                    builder.append(text, 1, text.length());
+                    column += text.length() - 1;
+                    return this;
+                }
             }
 
             builder.append(text);

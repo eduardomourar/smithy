@@ -15,6 +15,18 @@ operation NoBehavior {
 structure NoBehaviorInput {}
 
 @httpChecksum(
+    requestChecksumRequired: false,
+)
+@suppress(["UnstableTrait"])
+operation NoBehaviorRequestChecksumRequiredFalse {
+    input: NoBehaviorRequestChecksumRequiredFalseInput,
+    output: Unit
+}
+
+@input
+structure NoBehaviorRequestChecksumRequiredFalseInput {}
+
+@httpChecksum(
     requestChecksumRequired: true,
 )
 @suppress(["UnstableTrait"])
@@ -36,6 +48,24 @@ structure NoModeForResponseInput {}
 
 @output
 structure NoModeForResponseOutput {}
+
+@httpChecksum(
+    requestValidationModeMember: "validationMode"
+)
+@suppress(["UnstableTrait"])
+operation NoResponseAlgorithms {
+    input: NoResponseAlgorithmsInput,
+    output: NoResponseAlgorithmsOutput,
+}
+
+@input
+structure NoResponseAlgorithmsInput {
+    validationMode: ValidationMode
+}
+
+@output
+structure NoResponseAlgorithmsOutput {}
+
 
 @httpChecksum(
     requestAlgorithmMember: "requestAlgorithm",

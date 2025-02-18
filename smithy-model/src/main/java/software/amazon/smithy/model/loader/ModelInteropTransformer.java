@@ -1,18 +1,7 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.loader;
 
 import java.util.ArrayList;
@@ -66,7 +55,8 @@ final class ModelInteropTransformer {
             ShapeType.LONG,
             ShapeType.FLOAT,
             ShapeType.DOUBLE,
-            ShapeType.BOOLEAN);
+            ShapeType.BOOLEAN,
+            ShapeType.INT_ENUM); // intEnum is actually an integer in v1, but the ShapeType is different.
 
     private final Model model;
     private final List<ValidationEvent> events;
@@ -128,10 +118,10 @@ final class ModelInteropTransformer {
         // Only when the targeted shape had a default value by default in v1 or if
         // the member targets a streaming blob, which implies a default in 2.0
         return (HAD_DEFAULT_VALUE_IN_1_0.contains(target.getType()) || streamingBlobNeedsDefault(member, target))
-            // Don't re-add the @default trait
-            && !member.hasTrait(DefaultTrait.ID)
-            // Don't add a @default trait if the member or target are considered boxed in v1.
-            && memberAndTargetAreNotAlreadyExplicitlyBoxed(member, target);
+                // Don't re-add the @default trait
+                && !member.hasTrait(DefaultTrait.ID)
+                // Don't add a @default trait if the member or target are considered boxed in v1.
+                && memberAndTargetAreNotAlreadyExplicitlyBoxed(member, target);
     }
 
     private boolean streamingBlobNeedsDefault(MemberShape member, Shape target) {
@@ -164,13 +154,12 @@ final class ModelInteropTransformer {
 
     private boolean v2ShapeNeedsBoxTrait(MemberShape member, Shape target) {
         return isMemberInherentlyBoxedInV1(member)
-               && memberAndTargetAreNotAlreadyExplicitlyBoxed(member, target);
+                && memberAndTargetAreNotAlreadyExplicitlyBoxed(member, target);
     }
 
-    // Only apply box to members where the trait can be applied. Note that intEnum is treated
-    // like a normal integer in v1 implementations, so it is allowed to be synthetically boxed.
+    // Only apply box to members where the trait can be applied.
     private boolean canBoxTargetThisKindOfShape(Shape target) {
-        return HAD_DEFAULT_VALUE_IN_1_0.contains(target.getType()) || target.isIntEnumShape();
+        return HAD_DEFAULT_VALUE_IN_1_0.contains(target.getType());
     }
 
     private boolean memberAndTargetAreNotAlreadyExplicitlyBoxed(MemberShape member, Shape target) {

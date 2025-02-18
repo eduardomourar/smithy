@@ -1,18 +1,7 @@
 /*
- * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.utils;
 
 import java.util.Collections;
@@ -26,7 +15,7 @@ import java.util.Set;
 
 /**
  * Implements a simple media type parser based on the Content-Type grammar defined in
- * <a href="https://tools.ietf.org/html/rfc7231#section-3.1.1.1">RFC 7231</a>.
+ * <a href="https://tools.ietf.org/html/rfc9110#section-8.3">RFC 9110</a>.
  *
  * <p>The type, subtype, and parameter names are all canonicalized to
  * lowercase strings.
@@ -55,7 +44,7 @@ public final class MediaType {
     public static MediaType from(String value) {
         Parser parser = new Parser(value);
         parser.parse();
-        return new MediaType(parser.expression(), parser.type, parser.subtype, parser.parameters);
+        return new MediaType(parser.input().toString(), parser.type, parser.subtype, parser.parameters);
     }
 
     /**
@@ -69,7 +58,7 @@ public final class MediaType {
     public static boolean isJson(String mediaType) {
         MediaType type = from(mediaType);
         return (type.getType().equals("application") && type.getSubtypeWithoutSuffix().equals("json"))
-               || type.getSuffix().filter(s -> s.equals("json")).isPresent();
+                || type.getSuffix().filter(s -> s.equals("json")).isPresent();
     }
 
     /**
@@ -126,8 +115,8 @@ public final class MediaType {
     public Optional<String> getSuffix() {
         int position = subtype.lastIndexOf('+');
         return position == -1 || position == subtype.length() - 1
-               ? Optional.empty()
-               : Optional.of(subtype.substring(position + 1));
+                ? Optional.empty()
+                : Optional.of(subtype.substring(position + 1));
     }
 
     @Override
@@ -154,7 +143,7 @@ public final class MediaType {
     }
 
     private static final class Parser extends SimpleParser {
-        // See https://tools.ietf.org/html/rfc7230#section-3.2.6
+        // See https://tools.ietf.org/html/rfc9110#section-5.6.2
         // token          = 1*tchar
         // tchar          = "!" / "#" / "$" / "%" / "&" / "'" / "*"
         //                / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
@@ -198,7 +187,7 @@ public final class MediaType {
         }
 
         private void parse() {
-            // From: https://tools.ietf.org/html/rfc7231#section-3.1.1.1
+            // From: https://tools.ietf.org/html/rfc9110#section-8.3.1
             // The type, subtype, and parameter name tokens are case-insensitive.
             //     media-type = type "/" subtype *( OWS ";" OWS parameter )
             //     type       = token.
@@ -225,7 +214,7 @@ public final class MediaType {
 
         private String parseToken() {
             int start = position();
-            consumeUntilNoLongerMatches(TOKEN::contains);
+            consumeWhile(c -> TOKEN.contains((char) c));
 
             // Fail if the token was empty.
             if (start == position()) {
@@ -240,7 +229,7 @@ public final class MediaType {
             return sliceFrom(start);
         }
 
-        // See https://tools.ietf.org/html/rfc7230#section-3.2.6
+        // See https://tools.ietf.org/html/rfc9110#section-5.6.4
         // quoted-string  = DQUOTE *( qdtext / quoted-pair ) DQUOTE
         // qdtext         = HTAB / SP /%x21 / %x23-5B / %x5D-7E / obs-text
         // obs-text       = %x80-FF

@@ -1,18 +1,7 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.validation.validators;
 
 import java.util.ArrayList;
@@ -27,13 +16,15 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.knowledge.IdentifierBindingIndex;
-import software.amazon.smithy.model.knowledge.OperationIndex;
 import software.amazon.smithy.model.knowledge.PropertyBindingIndex;
 import software.amazon.smithy.model.shapes.MemberShape;
 import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ResourceShape;
 import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.shapes.ShapeId;
+import software.amazon.smithy.model.traits.NotPropertyTrait;
+import software.amazon.smithy.model.traits.PropertyTrait;
+import software.amazon.smithy.model.traits.ResourceIdentifierTrait;
 import software.amazon.smithy.model.validation.AbstractValidator;
 import software.amazon.smithy.model.validation.ValidationEvent;
 
@@ -56,48 +47,81 @@ public final class ResourceOperationInputOutputValidator extends AbstractValidat
     private List<ValidationEvent> validateResource(Model model, ResourceShape resource) {
         List<ValidationEvent> events = new ArrayList<>();
         Set<String> propertiesInOperations = new TreeSet<>();
-        OperationIndex operationIndex = OperationIndex.of(model);
         PropertyBindingIndex propertyBindingIndex = PropertyBindingIndex.of(model);
 
-        processLifecycleOperationProperties(model, resource, "put", resource.getPut(), operationIndex,
-            propertyBindingIndex, propertiesInOperations, events);
-        processLifecycleOperationProperties(model, resource, "create", resource.getCreate(), operationIndex,
-            propertyBindingIndex, propertiesInOperations, events);
-        processLifecycleOperationProperties(model, resource, "read", resource.getRead(), operationIndex,
-            propertyBindingIndex, propertiesInOperations, events);
-        processLifecycleOperationProperties(model, resource, "update", resource.getUpdate(), operationIndex,
-            propertyBindingIndex, propertiesInOperations, events);
-        processLifecycleOperationProperties(model, resource, "delete", resource.getDelete(), operationIndex,
-            propertyBindingIndex, propertiesInOperations, events);
+        processLifecycleOperationProperties(model,
+                resource,
+                "put",
+                resource.getPut(),
+                propertyBindingIndex,
+                propertiesInOperations,
+                events);
+        processLifecycleOperationProperties(model,
+                resource,
+                "create",
+                resource.getCreate(),
+                propertyBindingIndex,
+                propertiesInOperations,
+                events);
+        processLifecycleOperationProperties(model,
+                resource,
+                "read",
+                resource.getRead(),
+                propertyBindingIndex,
+                propertiesInOperations,
+                events);
+        processLifecycleOperationProperties(model,
+                resource,
+                "update",
+                resource.getUpdate(),
+                propertyBindingIndex,
+                propertiesInOperations,
+                events);
+        processLifecycleOperationProperties(model,
+                resource,
+                "delete",
+                resource.getDelete(),
+                propertyBindingIndex,
+                propertiesInOperations,
+                events);
         for (ShapeId operationId : resource.getOperations()) {
-            processLifecycleOperationProperties(model, resource, operationId.getName(), Optional.of(operationId),
-                operationIndex, propertyBindingIndex, propertiesInOperations, events);
+            processLifecycleOperationProperties(model,
+                    resource,
+                    operationId.getName(),
+                    Optional.of(operationId),
+                    propertyBindingIndex,
+                    propertiesInOperations,
+                    events);
         }
 
         Set<String> definedProperties = new HashSet<>(resource.getProperties().keySet());
         definedProperties.removeAll(propertiesInOperations);
         for (String propertyNotInLifecycleOp : definedProperties) {
-            events.add(error(resource, String.format("Resource property `%s` is not used in the input or output"
-                    + " of create or an instance operation.", propertyNotInLifecycleOp)));
+            events.add(error(resource,
+                    String.format("Resource property `%s` is not used in the input or output"
+                            + " of create or an instance operation.", propertyNotInLifecycleOp)));
         }
 
         return events;
     }
 
     private void processLifecycleOperationProperties(
-        Model model,
-        ResourceShape resource,
-        String name,
-        Optional<ShapeId> operationShapeId,
-        OperationIndex operationIndex,
-        PropertyBindingIndex propertyBindingIndex,
-        Set<String> propertiesInOperations,
-        List<ValidationEvent> events
+            Model model,
+            ResourceShape resource,
+            String name,
+            Optional<ShapeId> operationShapeId,
+            PropertyBindingIndex propertyBindingIndex,
+            Set<String> propertiesInOperations,
+            List<ValidationEvent> events
     ) {
         operationShapeId.flatMap(model::getShape).flatMap(Shape::asOperationShape).ifPresent(operation -> {
             propertiesInOperations.addAll(getAllOperationProperties(propertyBindingIndex, operation));
-            validateOperationInputOutput(model, propertyBindingIndex, operationIndex, resource, operation,
-                    name, events);
+            validateOperationInputOutput(model,
+                    propertyBindingIndex,
+                    resource,
+                    operation,
+                    name,
+                    events);
         });
     }
 
@@ -122,22 +146,18 @@ public final class ResourceOperationInputOutputValidator extends AbstractValidat
     private void validateOperationInputOutput(
             Model model,
             PropertyBindingIndex propertyBindingIndex,
-            OperationIndex operationIndex,
             ResourceShape resource,
             OperationShape operation,
             String lifecycleOperationName,
             List<ValidationEvent> events
     ) {
-        validateOperationInput(model, propertyBindingIndex, operationIndex, resource,
-                operation, lifecycleOperationName, events);
-        validateOperationOutput(model, propertyBindingIndex, operationIndex, resource,
-                operation, lifecycleOperationName, events);
+        validateOperationInput(model, propertyBindingIndex, resource, operation, lifecycleOperationName, events);
+        validateOperationOutput(model, propertyBindingIndex, resource, operation, lifecycleOperationName, events);
     }
 
     private void validateOperationOutput(
             Model model,
             PropertyBindingIndex propertyBindingIndex,
-            OperationIndex operationIndex,
             ResourceShape resource,
             OperationShape operation,
             String lifecycleOperationName,
@@ -147,13 +167,20 @@ public final class ResourceOperationInputOutputValidator extends AbstractValidat
         Map<String, Set<MemberShape>> propertyToMemberMappings = new TreeMap<>();
         IdentifierBindingIndex identifierBindingIndex = IdentifierBindingIndex.of(model);
         Set<String> identifierMembers = new HashSet<>(identifierBindingIndex
-            .getOperationOutputBindings(resource, operation).values());
+                .getOperationOutputBindings(resource, operation)
+                .values());
 
         Shape shape = propertyBindingIndex.getOutputPropertiesShape(operation);
         for (MemberShape member : shape.members()) {
             if (propertyBindingIndex.isMemberShapeProperty(member)) {
-                validateMember(events, lifecycleOperationName, propertyBindingIndex, resource, member,
-                        identifierMembers, properties, propertyToMemberMappings);
+                validateMember(events,
+                        lifecycleOperationName,
+                        propertyBindingIndex,
+                        resource,
+                        member,
+                        identifierMembers,
+                        properties,
+                        propertyToMemberMappings);
             }
         }
         validateConflictingProperties(events, shape, propertyToMemberMappings);
@@ -162,7 +189,6 @@ public final class ResourceOperationInputOutputValidator extends AbstractValidat
     private void validateOperationInput(
             Model model,
             PropertyBindingIndex propertyBindingIndex,
-            OperationIndex operationIndex,
             ResourceShape resource,
             OperationShape operation,
             String lifecycleOperationName,
@@ -172,13 +198,20 @@ public final class ResourceOperationInputOutputValidator extends AbstractValidat
         Map<String, Set<MemberShape>> propertyToMemberMappings = new TreeMap<>();
         IdentifierBindingIndex identifierBindingIndex = IdentifierBindingIndex.of(model);
         Set<String> identifierMembers = new HashSet<>(identifierBindingIndex
-            .getOperationOutputBindings(resource, operation).values());
+                .getOperationOutputBindings(resource, operation)
+                .values());
 
         Shape shape = propertyBindingIndex.getInputPropertiesShape(operation);
         for (MemberShape member : shape.members()) {
             if (propertyBindingIndex.isMemberShapeProperty(member)) {
-                validateMember(events, lifecycleOperationName, propertyBindingIndex, resource, member,
-                        identifierMembers, properties, propertyToMemberMappings);
+                validateMember(events,
+                        lifecycleOperationName,
+                        propertyBindingIndex,
+                        resource,
+                        member,
+                        identifierMembers,
+                        properties,
+                        propertyToMemberMappings);
             }
         }
         validateConflictingProperties(events, shape, propertyToMemberMappings);
@@ -191,11 +224,14 @@ public final class ResourceOperationInputOutputValidator extends AbstractValidat
     ) {
         for (Map.Entry<String, Set<MemberShape>> entry : propertyToMemberMappings.entrySet()) {
             if (entry.getValue().size() > 1) {
-                events.add(error(shape, String.format(
-                        "This shape contains members with conflicting property names that resolve to '%s': %s",
-                        entry.getKey(),
-                        entry.getValue().stream().map(MemberShape::getMemberName)
-                                .collect(Collectors.joining(", ")))));
+                events.add(error(shape,
+                        String.format(
+                                "This shape contains members with conflicting resource property names that resolve to '%s': %s",
+                                entry.getKey(),
+                                entry.getValue()
+                                        .stream()
+                                        .map(MemberShape::getMemberName)
+                                        .collect(Collectors.joining(", ")))));
             }
         }
     }
@@ -212,17 +248,28 @@ public final class ResourceOperationInputOutputValidator extends AbstractValidat
     ) {
         String propertyName = propertyBindingIndex.getPropertyName(member.getId()).get();
         propertyToMemberMappings.computeIfAbsent(propertyName, m -> new TreeSet<>()).add(member);
-
         if (properties.containsKey(propertyName)) {
             if (!properties.get(propertyName).equals(member.getTarget())) {
-                events.add(error(resource, String.format("The resource property `%s` has a conflicting"
-                        + " target shape `%s` on the `%s` operation which targets `%s`.",
-                        propertyName, member.getTarget().toString(), lifecycleOperationName,
-                        properties.get(propertyName).toString())));
+                ShapeId expectedTarget = properties.get(propertyName);
+                events.add(error(member,
+                        String.format(
+                                "This member must target `%s`. This member is used as part of the `%s` operation of the `%s` "
+                                        + "resource and conflicts with its `%s` resource property.",
+                                expectedTarget,
+                                lifecycleOperationName,
+                                resource.getId(),
+                                propertyName)));
             }
         } else if (!identifierMembers.contains(member.getMemberName())) {
-            events.add(error(member, String.format("Member `%s` does not target a property or identifier"
-                    + " for resource `%s`", member.getMemberName(), resource.getId().toString())));
+            events.add(error(member,
+                    String.format("Member `%s` does not target a property or identifier for resource "
+                            + "`%s`. If it is an identifier, apply the `%s` trait. If it is a property, apply the `%s` trait. "
+                            + "If it is neither, apply the `%s` trait.",
+                            member.getMemberName(),
+                            resource.getId().toString(),
+                            ResourceIdentifierTrait.ID,
+                            PropertyTrait.ID,
+                            NotPropertyTrait.ID)));
         }
     }
 }

@@ -1,3 +1,7 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 package software.amazon.smithy.cli;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -10,9 +14,9 @@ public class ColorFormatterTest {
     public void writesToPrinterWhenClosed() {
         BufferPrinter printer = new BufferPrinter();
         ColorFormatter formatter = AnsiColorFormatter.FORCE_COLOR;
-        String expected = String.format("abc\nHello\n\n\033[31mRed\033[0m\n\n\n0\n");
+        String expected = String.format("abc\nHello\n\n\033[31mRed\033[0m\n\n\n0");
 
-        try (ColorFormatter.PrinterBuffer buffer = formatter.printerBuffer(printer)) {
+        try (ColorBuffer buffer = ColorBuffer.of(formatter, printer)) {
             buffer.append('a');
             buffer.append("bc");
             buffer.println();
@@ -33,9 +37,9 @@ public class ColorFormatterTest {
     public void appendsNewlineIfNeededInToString() {
         BufferPrinter printer = new BufferPrinter();
         ColorFormatter formatter = AnsiColorFormatter.FORCE_COLOR;
-        String expected ="abc\n";
+        String expected = "abc\n";
 
-        try (ColorFormatter.PrinterBuffer buffer = formatter.printerBuffer(printer)) {
+        try (ColorBuffer buffer = ColorBuffer.of(formatter, printer)) {
             buffer.println("abc");
             assertThat(normalizeNewlines(buffer.toString()), equalTo(expected));
         }

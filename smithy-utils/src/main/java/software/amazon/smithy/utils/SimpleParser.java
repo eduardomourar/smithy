@@ -1,36 +1,28 @@
 /*
- * Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.utils;
 
+import java.nio.CharBuffer;
 import java.util.Objects;
+import java.util.function.IntPredicate;
 import java.util.function.Predicate;
 
 /**
  * A simple expression parser that can be extended to implement parsers
- * for small domain specific languages.
+ * for small domain-specific languages.
  *
- * <p>This parser consumes characters of an in-memory string while tracking
+ * <p>This parser internally consumes characters of a {@link CharSequence} while tracking
  * the current 0-based position, 1-based line, and 1-based column.
  * Expectations can be made on the parser to require specific characters,
  * and when those expectations are not met, a syntax exception is thrown.
  */
 public class SimpleParser {
 
-    private final String expression;
-    private final int length;
+    public static final char EOF = Character.MIN_VALUE;
+
+    private final CharSequence input;
     private final int maxNestingLevel;
     private int position = 0;
     private int line = 1;
@@ -42,7 +34,7 @@ public class SimpleParser {
      *
      * @param expression Expression to parser.
      */
-    public SimpleParser(String expression) {
+    public SimpleParser(CharSequence expression) {
         this(expression, 0);
     }
 
@@ -53,27 +45,30 @@ public class SimpleParser {
      * {@code maxParsingLevel} to 0 disables the enforcement of a
      * maximum parsing level.
      *
-     * @param expression Expression to parse that must not be null.
+     * @param input Input to parse that must not be null.
      * @param maxNestingLevel The maximum allowed nesting level of the parser.
      */
-    public SimpleParser(String expression, int maxNestingLevel) {
-        this.expression = Objects.requireNonNull(expression, "expression must not be null");
-        this.length = expression.length();
+    public SimpleParser(CharSequence input, int maxNestingLevel) {
+        this.input = Objects.requireNonNull(input, "expression must not be null");
+        this.maxNestingLevel = maxNestingLevel;
 
         if (maxNestingLevel < 0) {
             throw new IllegalArgumentException("maxNestingLevel must be >= 0");
         }
-
-        this.maxNestingLevel = maxNestingLevel;
     }
 
     /**
-     * Gets the expression being parsed.
+     * Gets the input being parsed as a CharSequence.
      *
-     * @return Returns the expression being parsed.
+     * @return Returns the input being parsed.
      */
+    public final CharSequence input() {
+        return input;
+    }
+
+    @Deprecated
     public final String expression() {
-        return expression;
+        return input.toString();
     }
 
     /**
@@ -115,7 +110,7 @@ public class SimpleParser {
      * @return Returns true if the parser has reached the end.
      */
     public final boolean eof() {
-        return position >= length;
+        return position >= input.length();
     }
 
     /**
@@ -140,11 +135,11 @@ public class SimpleParser {
      */
     public final char peek(int offset) {
         int target = position + offset;
-        if (target >= length || target < 0) {
-            return Character.MIN_VALUE;
+        if (target >= input.length() || target < 0) {
+            return EOF;
         }
 
-        return expression.charAt(target);
+        return input.charAt(target);
     }
 
     /**
@@ -170,7 +165,7 @@ public class SimpleParser {
      */
     public final String peekSingleCharForMessage() {
         char peek = peek();
-        return peek == Character.MIN_VALUE ? "[EOF]" : String.valueOf(peek);
+        return peek == EOF ? "[EOF]" : String.valueOf(peek);
     }
 
     /**
@@ -178,7 +173,7 @@ public class SimpleParser {
      *
      * @param tokens Characters to expect.
      * @return Returns the consumed character.
-
+    
      */
     public final char expect(char... tokens) {
         for (char token : tokens) {
@@ -189,8 +184,8 @@ public class SimpleParser {
         }
 
         StringBuilder message = new StringBuilder("Found '")
-                                .append(peekSingleCharForMessage())
-                                .append("', but expected one of the following tokens:");
+                .append(peekSingleCharForMessage())
+                .append("', but expected one of the following tokens:");
         for (char c : tokens) {
             message.append(' ').append('\'').append(c).append('\'');
         }
@@ -205,14 +200,14 @@ public class SimpleParser {
      * @return Returns the created syntax error.
      */
     public RuntimeException syntax(String message) {
-        return new RuntimeException("Syntax error at line " + line() + " column " + column() + ": " + message);
+        return new RuntimeException("Syntax error at line " + line() + ", column " + column() + ": " + message);
     }
 
     /**
      * Skip 0 or more whitespace characters (that is, ' ', '\t', '\r', and '\n').
      */
     public void ws() {
-        while (!eof() && isWhitespace(peek())) {
+        while (isWhitespace(peek())) {
             skip();
         }
     }
@@ -225,7 +220,7 @@ public class SimpleParser {
      * Skip 0 or more spaces (that is, ' ' and '\t').
      */
     public void sp() {
-        while (!eof() && isSpace(peek())) {
+        while (isSpace(peek())) {
             skip();
         }
     }
@@ -264,7 +259,7 @@ public class SimpleParser {
             return;
         }
 
-        switch (expression.charAt(position)) {
+        switch (input.charAt(position)) {
             case '\r':
                 if (peek(1) == '\n') {
                     position++;
@@ -297,38 +292,71 @@ public class SimpleParser {
      * the contents of the skipped characters using {@link #sliceFrom(int)}.
      */
     public void consumeRemainingCharactersOnLine() {
-        consumeUntilNoLongerMatches(c -> c != '\n' && c != '\r');
+        char ch = peek();
+        while (ch != EOF && ch != '\n' && ch != '\r') {
+            skip();
+            ch = peek();
+        }
     }
 
     /**
-     * Gets a slice of the expression starting from the given 0-based
-     * character position, read all the way through to the current
-     * position of the parser.
+     * Copies a slice of the expression into a string, starting from the given 0-based character position,
+     * read all the way through to the current position of the parser.
      *
      * @param start Position to slice from, ending at the current position.
-     * @return Returns the slice of the expression from {@code start} to {@link #position}.
+     * @return Returns the copied slice of the expression from {@code start} to {@link #position}.
      */
     public final String sliceFrom(int start) {
-        return expression().substring(start, position);
+        return input.subSequence(start, position).toString();
     }
 
     /**
-     * Reads a lexeme from the expression while the given {@code predicate}
-     * matches each peeked character.
+     * Gets a zero-copy slice of the expression starting from the given 0-based character position, read all the
+     * way through to the current position of the parser.
+     *
+     * @param start Position to slice from, ending at the current position.
+     * @return Returns the zero-copy slice of the expression from {@code start} to {@link #position}.
+     */
+    public final CharSequence borrowSliceFrom(int start) {
+        return CharBuffer.wrap(input, start, position);
+    }
+
+    /**
+     * Gets a zero-copy slice of the expression starting from the given 0-based character position, read all the
+     * way through to the current position of the parser minus {@code removeRight}.
+     *
+     * @param start       Position to slice from, ending at the current position.
+     * @param removeRight Number of characters to omit before the current position.
+     * @return Returns the zero-copy slice of the expression from {@code start} to {@link #position}.
+     */
+    public final CharSequence borrowSliceFrom(int start, int removeRight) {
+        return CharBuffer.wrap(input, start, position - removeRight);
+    }
+
+    @Deprecated
+    public final int consumeUntilNoLongerMatches(Predicate<Character> predicate) {
+        int startPosition = position;
+        char ch = peek();
+        while (ch != EOF && predicate.test(ch)) {
+            skip();
+            ch = peek();
+        }
+        return position - startPosition;
+    }
+
+    /**
+     * Reads a lexeme from the expression while the given {@code predicate} matches each peeked character.
      *
      * @param predicate Predicate that filters characters.
      * @return Returns the consumed lexeme (or an empty string on no matches).
      */
-    public final int consumeUntilNoLongerMatches(Predicate<Character> predicate) {
+    public final int consumeWhile(IntPredicate predicate) {
         int startPosition = position;
-        while (!eof()) {
-            char peekedChar = peek();
-            if (!predicate.test(peekedChar)) {
-                break;
-            }
+        char ch = peek();
+        while (ch != EOF && predicate.test(ch)) {
             skip();
+            ch = peek();
         }
-
         return position - startPosition;
     }
 

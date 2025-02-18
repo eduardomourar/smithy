@@ -1,18 +1,7 @@
 /*
- * Copyright 2021 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.aws.traits;
 
 import java.util.List;
@@ -27,7 +16,6 @@ import software.amazon.smithy.model.traits.AbstractTraitBuilder;
 import software.amazon.smithy.model.traits.Trait;
 import software.amazon.smithy.utils.BuilderRef;
 import software.amazon.smithy.utils.ListUtils;
-import software.amazon.smithy.utils.SmithyBuilder;
 import software.amazon.smithy.utils.SmithyUnstableApi;
 import software.amazon.smithy.utils.ToSmithyBuilder;
 
@@ -38,7 +26,12 @@ import software.amazon.smithy.utils.ToSmithyBuilder;
 public final class HttpChecksumTrait extends AbstractTrait implements ToSmithyBuilder<HttpChecksumTrait> {
     public static final ShapeId ID = ShapeId.from("aws.protocols#httpChecksum");
     public static final String CHECKSUM_PREFIX = "x-amz-checksum-";
-    public static final List<String> CHECKSUM_ALGORITHMS = ListUtils.of("CRC32C", "CRC32", "SHA1", "SHA256");
+    // This list should be in sync with the trait definition in `aws.protocols.smithy`.
+    public static final List<String> CHECKSUM_ALGORITHMS = ListUtils.of("CRC64NVME",
+            "CRC32C",
+            "CRC32",
+            "SHA1",
+            "SHA256");
     public static final List<String> VALIDATION_MODES = ListUtils.of("ENABLED");
 
     public static final String REQUEST_CHECKSUM_REQUIRED = "requestChecksumRequired";
@@ -64,7 +57,7 @@ public final class HttpChecksumTrait extends AbstractTrait implements ToSmithyBu
     }
 
     @Override
-    public SmithyBuilder<HttpChecksumTrait> toBuilder() {
+    public Builder toBuilder() {
         return new Builder()
                 .sourceLocation(getSourceLocation())
                 .requestChecksumRequired(requestChecksumRequired)

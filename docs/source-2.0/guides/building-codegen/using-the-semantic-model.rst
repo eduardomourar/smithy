@@ -284,7 +284,7 @@ the model and might rely on protocol-specific information.
     HttpBindingIndex index = HttpBindingIndex.of(model);
 
     String defaultPayloadType = "application/json";
-    String eventStreamType = "application/vnd.amazon.event-stream");
+    String eventStreamType = "application/vnd.amazon.eventstream");
     String contentType = index
         .determineRequestContentType(operation, defaultPayloadType, eventStreamType)
         .orElseNull();
@@ -302,7 +302,7 @@ the model and might rely on protocol-specific information.
    HttpBindingIndex index = HttpBindingIndex.of(model);
 
    String defaultPayloadType = "application/json";
-   String eventStreamType = "application/vnd.amazon.event-stream");
+   String eventStreamType = "application/vnd.amazon.eventstream");
    String contentType = index
        .determineResponseContentType(operation, defaultPayloadType, eventStreamType)
        .orElseNull();
@@ -498,6 +498,7 @@ model that are not connected to the service being generated.
     Set<Shape> closure = walker.walkShapes(someService);
     model = ModelTransformer.create().removeShapesIf(shape -> !closure.contains(shape));
 
+.. _codegen-selectors:
 
 Selectors
 =========

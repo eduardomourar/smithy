@@ -1,18 +1,7 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.rulesengine.traits;
 
 import java.util.List;
@@ -37,7 +26,7 @@ public final class EndpointTestCase implements FromSourceLocation, ToSmithyBuild
     private final List<EndpointTestOperationInput> operationInputs;
     private final EndpointTestExpectation expect;
 
-    public EndpointTestCase(Builder builder) {
+    private EndpointTestCase(Builder builder) {
         this.sourceLocation = builder.sourceLocation;
         this.documentation = builder.documentation;
         this.params = builder.params;
@@ -95,9 +84,9 @@ public final class EndpointTestCase implements FromSourceLocation, ToSmithyBuild
         }
         EndpointTestCase that = (EndpointTestCase) o;
         return Objects.equals(getDocumentation(), that.getDocumentation())
-               && Objects.equals(getParams(), that.getParams())
-               && Objects.equals(getOperationInputs(), that.getOperationInputs())
-               && Objects.equals(getExpect(), that.getExpect());
+                && Objects.equals(getParams(), that.getParams())
+                && Objects.equals(getOperationInputs(), that.getOperationInputs())
+                && Objects.equals(getExpect(), that.getExpect());
     }
 
     public static final class Builder implements SmithyBuilder<EndpointTestCase> {
@@ -107,8 +96,7 @@ public final class EndpointTestCase implements FromSourceLocation, ToSmithyBuild
         private ObjectNode params = ObjectNode.objectNode();
         private EndpointTestExpectation expect;
 
-        private Builder() {
-        }
+        private Builder() {}
 
         public Builder sourceLocation(FromSourceLocation sourceLocation) {
             this.sourceLocation = sourceLocation.getSourceLocation();

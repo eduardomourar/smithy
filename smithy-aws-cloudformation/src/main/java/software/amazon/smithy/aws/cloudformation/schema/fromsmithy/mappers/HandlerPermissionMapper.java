@@ -1,18 +1,7 @@
 /*
- * Copyright 2021 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.aws.cloudformation.schema.fromsmithy.mappers;
 
 import java.util.Locale;
@@ -22,7 +11,7 @@ import software.amazon.smithy.aws.cloudformation.schema.fromsmithy.CfnMapper;
 import software.amazon.smithy.aws.cloudformation.schema.fromsmithy.Context;
 import software.amazon.smithy.aws.cloudformation.schema.model.Handler;
 import software.amazon.smithy.aws.cloudformation.schema.model.ResourceSchema;
-import software.amazon.smithy.aws.iam.traits.RequiredActionsTrait;
+import software.amazon.smithy.aws.iam.traits.IamActionTrait;
 import software.amazon.smithy.aws.traits.ServiceTrait;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.shapes.OperationShape;
@@ -40,7 +29,7 @@ import software.amazon.smithy.utils.SmithyInternalApi;
  * @see <a href="https://docs.aws.amazon.com/cloudformation-cli/latest/userguide/resource-type-schema.html#schema-properties-handlers">handlers Docs</a>
  */
 @SmithyInternalApi
-public final class HandlerPermissionMapper implements CfnMapper {
+final class HandlerPermissionMapper implements CfnMapper {
     @Override
     public void before(Context context, ResourceSchema.Builder resourceSchema) {
         if (context.getConfig().getDisableHandlerPermissionGeneration()) {
@@ -67,10 +56,9 @@ public final class HandlerPermissionMapper implements CfnMapper {
                 .orElse(SetUtils.of());
         createPermissions.addAll(putPermissions);
         // Put operations without the noReplace trait are used for updates.
-        resource.getPut()
-                .map(model::expectShape)
-                .filter(shape -> !shape.hasTrait(NoReplaceTrait.class))
-                .ifPresent(shape -> updatePermissions.addAll(putPermissions));
+        if (!resource.hasTrait(NoReplaceTrait.class)) {
+            updatePermissions.addAll(putPermissions);
+        }
 
         // Set the create and update handlers, if they have permissions, now that they're complete.
         if (!createPermissions.isEmpty()) {
@@ -84,21 +72,27 @@ public final class HandlerPermissionMapper implements CfnMapper {
         // permissions to be combined.
         resource.getRead()
                 .map(operation -> getPermissionsEntriesForOperation(model, service, operation))
-                .ifPresent(permissions -> resourceSchema.addHandler("read", Handler.builder()
-                        .permissions(permissions).build()));
+                .ifPresent(permissions -> resourceSchema.addHandler("read",
+                        Handler.builder()
+                                .permissions(permissions)
+                                .build()));
 
         resource.getDelete()
                 .map(operation -> getPermissionsEntriesForOperation(model, service, operation))
-                .ifPresent(permissions -> resourceSchema.addHandler("delete", Handler.builder()
-                        .permissions(permissions).build()));
+                .ifPresent(permissions -> resourceSchema.addHandler("delete",
+                        Handler.builder()
+                                .permissions(permissions)
+                                .build()));
 
         resource.getList()
                 .map(operation -> getPermissionsEntriesForOperation(model, service, operation))
-                .ifPresent(permissions -> resourceSchema.addHandler("list", Handler.builder()
-                        .permissions(permissions).build()));
+                .ifPresent(permissions -> resourceSchema.addHandler("list",
+                        Handler.builder()
+                                .permissions(permissions)
+                                .build()));
     }
 
-    private Set<String> getPermissionsEntriesForOperation(Model model, ServiceShape service, ShapeId operationId) {
+    static Set<String> getPermissionsEntriesForOperation(Model model, ServiceShape service, ShapeId operationId) {
         OperationShape operation = model.expectShape(operationId, OperationShape.class);
         Set<String> permissionsEntries = new TreeSet<>();
 
@@ -107,14 +101,12 @@ public final class HandlerPermissionMapper implements CfnMapper {
                 service.getTrait(ServiceTrait.class)
                         .map(ServiceTrait::getArnNamespace)
                         .orElse(service.getId().getName())
-                .toLowerCase(Locale.US);
+                        .toLowerCase(Locale.US);
         operationActionName += ":" + operationId.getName(service);
         permissionsEntries.add(operationActionName);
 
         // Add all the other required actions for the operation.
-        operation.getTrait(RequiredActionsTrait.class)
-                .map(RequiredActionsTrait::getValues)
-                .map(permissionsEntries::addAll);
+        permissionsEntries.addAll(IamActionTrait.resolveRequiredActions(operation));
         return permissionsEntries;
     }
 }

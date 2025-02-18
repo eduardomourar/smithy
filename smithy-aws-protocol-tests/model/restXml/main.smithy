@@ -3,13 +3,16 @@ $version: "2.0"
 namespace aws.protocoltests.restxml
 
 use aws.api#service
+use aws.auth#sigv4
 use aws.protocols#restXml
 use smithy.test#httpRequestTests
 use smithy.test#httpResponseTests
 
 /// A REST XML service that sends XML requests and responses.
 @service(sdkId: "Rest Xml Protocol")
+@sigv4(name: "restxml")
 @restXml
+@title("Sample Rest Xml Protocol Service")
 service RestXml {
     version: "2019-12-16",
     operations: [
@@ -50,6 +53,9 @@ service RestXml {
         HttpPayloadTraits,
         HttpPayloadTraitsWithMediaType,
         HttpPayloadWithStructure,
+        HttpEnumPayload,
+        HttpStringPayload,
+        HttpPayloadWithUnion,
         HttpPayloadWithXmlName,
         BodyWithXmlName,
         HttpPayloadWithMemberXmlName,
@@ -77,9 +83,11 @@ service RestXml {
         XmlMaps,
         XmlMapsXmlName,
         NestedXmlMaps,
+        NestedXmlMapWithXmlName,
         FlattenedXmlMap,
         FlattenedXmlMapWithXmlName,
         FlattenedXmlMapWithXmlNamespace,
+        XmlMapWithXmlNamespace,
 
         // @xmlAttribute tests
         XmlAttributes,
@@ -96,5 +104,11 @@ service RestXml {
         // client-only timestamp parsing tests
         DatetimeOffsets,
         FractionalSeconds,
+
+        // requestCompression trait tests
+        PutWithContentEncoding,
+
+        // Content-Type header tests
+        ContentTypeParameters,
     ]
 }

@@ -1,21 +1,13 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.model.node;
 
+import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.instanceOf;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -197,6 +189,11 @@ public class NumberNodeTest {
             public double doubleValue() {
                 return 0;
             }
+
+            @Override
+            public String toString() {
+                return "0.000";
+            }
         }, true);
         cases.put(new Number() {
             @Override
@@ -240,5 +237,55 @@ public class NumberNodeTest {
             boolean result = new NumberNode(k, SourceLocation.NONE).isZero();
             assertEquals(v, result, "Expected " + k + " to be " + v);
         });
+    }
+
+    @Test
+    public void compareIntAndShort() {
+        Node left = Node.from(1);
+        Node right = Node.from((short) 1);
+
+        assertThat(left, equalTo(right));
+    }
+
+    @Test
+    public void compareShortAndFloat() {
+        Node left = Node.from((float) 1.0);
+        Node right = Node.from((short) 1);
+
+        assertThat(left, not(equalTo(right)));
+    }
+
+    @Test
+    public void compareByteAndFloat() {
+        Node left = Node.from((float) 1.0);
+        Node right = Node.from((byte) 1);
+
+        assertThat(left, not(equalTo(right)));
+    }
+
+    @Test
+    public void compareDoubleAndBigDecimal() {
+        Node left = Node.from(new BigDecimal("1.0e+10"));
+        Node right = Node.from(1.0e+10);
+
+        assertThat(left, equalTo(right));
+    }
+
+    @Test
+    public void compareDoubleAndFloat() {
+        Node left = Node.from((float) 1.0e+10);
+        Node right = Node.from((double) 1.0e+10);
+
+        assertThat(left, equalTo(right));
+    }
+
+    @Test
+    public void detectsNegativeValues() {
+        assertThat(NumberNode.from(Double.NEGATIVE_INFINITY).isNegative(), is(true));
+        assertThat(NumberNode.from(Double.POSITIVE_INFINITY).isNegative(), is(false));
+        assertThat(NumberNode.from(Double.NaN).isNegative(), is(false));
+        assertThat(NumberNode.from(0).isNegative(), is(false));
+        assertThat(NumberNode.from(1).isNegative(), is(false));
+        assertThat(NumberNode.from(-1).isNegative(), is(true));
     }
 }

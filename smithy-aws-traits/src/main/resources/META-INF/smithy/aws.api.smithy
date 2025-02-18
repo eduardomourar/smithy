@@ -38,6 +38,14 @@ structure arn {
     /// for the customer account ID. This can only be set to true if absolute
     /// is not set or is false.
     noAccount: Boolean
+
+    /// Defines which character is used to delimit sections of the resource
+    /// segment of an ARN. This can only be set if absolute is set to true.
+    resourceDelimiter: ResourceDelimiter
+
+    /// Set to true to indicate that an ARN may be reused for different
+    /// instances of a resource.
+    reusable: Boolean
 }
 
 /// Marks a string as containing an ARN.
@@ -186,6 +194,12 @@ structure service {
     /// to the `arnNamespace` plus `.amazonaws.com`.
     cloudTrailEventSource: String
 
+    /// The `docId` property is a string value that defines the identifier
+    /// used to implemention linking between service and SDK documentation for
+    /// AWS services. If not specified, this value defaults to the `sdkId` in
+    /// lower case plus the service `version` property, separated by dashes.
+    docId: String
+
     /// The `endpointPrefix` property is a string value that identifies which
     /// endpoint in a given region should be used to connect to the service.
     /// For example, most services in the AWS standard partition have endpoints
@@ -254,6 +268,17 @@ structure taggable {
     /// Flag indicating if the resource is not able to carry AWS system level.
     /// Used by service principals. Default value is `false`
     disableSystemTags: Boolean
+}
+
+
+/// The possible delimiters for an ARN resource segment.
+@private
+enum ResourceDelimiter {
+    /// The `/` character.
+    FORWARD_SLASH = "/"
+
+    /// The `:` character.
+    COLON = ":"
 }
 
 /// A string representing a service's ARN namespace.

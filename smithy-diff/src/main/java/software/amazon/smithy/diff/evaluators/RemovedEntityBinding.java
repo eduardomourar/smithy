@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.diff.evaluators;
 
 import java.util.ArrayList;
@@ -23,6 +12,7 @@ import software.amazon.smithy.diff.ChangedShape;
 import software.amazon.smithy.diff.Differences;
 import software.amazon.smithy.model.shapes.EntityShape;
 import software.amazon.smithy.model.shapes.ShapeId;
+import software.amazon.smithy.model.shapes.ShapeType;
 import software.amazon.smithy.model.validation.Severity;
 import software.amazon.smithy.model.validation.ValidationEvent;
 
@@ -37,6 +27,8 @@ import software.amazon.smithy.model.validation.ValidationEvent;
 public final class RemovedEntityBinding extends AbstractDiffEvaluator {
     private static final String REMOVED_RESOURCE = "RemovedResourceBinding";
     private static final String REMOVED_OPERATION = "RemovedOperationBinding";
+    private static final String FROM_RESOURCE = ".FromResource.";
+    private static final String FROM_SERVICE = ".FromService.";
 
     @Override
     public List<ValidationEvent> evaluate(Differences differences) {
@@ -59,15 +51,19 @@ public final class RemovedEntityBinding extends AbstractDiffEvaluator {
         return removed;
     }
 
-    private ValidationEvent createRemovedEvent(String eventId, EntityShape entity, ShapeId removedShape) {
-        String descriptor = eventId.equals(REMOVED_RESOURCE) ? "Resource" : "Operation";
+    private ValidationEvent createRemovedEvent(String typeOfRemoval, EntityShape parentEntity, ShapeId childShape) {
+        String childType = typeOfRemoval.equals(REMOVED_RESOURCE) ? "Resource" : "Operation";
+        String typeOfParentShape = ShapeType.RESOURCE.equals(parentEntity.getType()) ? FROM_RESOURCE : FROM_SERVICE;
         String message = String.format(
                 "%s binding of `%s` was removed from %s shape, `%s`",
-                descriptor, removedShape, entity.getType(), entity.getId());
+                childType,
+                childShape,
+                parentEntity.getType(),
+                parentEntity.getId());
         return ValidationEvent.builder()
-                .id(eventId)
+                .id(typeOfRemoval + typeOfParentShape + childShape.getName())
                 .severity(Severity.ERROR)
-                .shape(entity)
+                .shape(parentEntity)
                 .message(message)
                 .build();
     }

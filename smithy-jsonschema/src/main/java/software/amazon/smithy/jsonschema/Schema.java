@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.jsonschema;
 
 import java.util.ArrayList;
@@ -27,8 +16,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Logger;
 import software.amazon.smithy.model.node.ArrayNode;
+import software.amazon.smithy.model.node.BooleanNode;
 import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.node.ObjectNode;
+import software.amazon.smithy.model.node.StringNode;
 import software.amazon.smithy.model.node.ToNode;
 import software.amazon.smithy.utils.ListUtils;
 import software.amazon.smithy.utils.MapUtils;
@@ -60,9 +51,13 @@ import software.amazon.smithy.utils.ToSmithyBuilder;
 public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
     private static final Logger LOGGER = Logger.getLogger(Schema.class.getName());
 
+    // A schema can be an object OR a boolean - when this value is set (true or false), the schema is represented
+    // as a "trivial boolean schema".
+    private final Boolean trivial;
     private final String ref;
     private final String type;
     private final Collection<String> enumValues;
+    private final Collection<Integer> intEnumValues;
     private final Node constValue;
     private final Node defaultValue;
 
@@ -101,6 +96,7 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
     private final boolean writeOnly;
     private final String comment;
     private final Node examples;
+    private final boolean deprecated;
 
     private final String contentEncoding;
     private final String contentMediaType;
@@ -110,9 +106,15 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
     private Node asNode;
 
     private Schema(Builder builder) {
+        trivial = builder.trivial;
+        if (trivial != null) {
+            asNode = Node.from(trivial);
+        }
+
         ref = builder.ref;
         type = builder.type;
         enumValues = Collections.unmodifiableCollection(builder.enumValues);
+        intEnumValues = Collections.unmodifiableCollection(builder.intEnumValues);
         constValue = builder.constValue;
         defaultValue = builder.defaultValue;
 
@@ -151,6 +153,7 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
         writeOnly = builder.writeOnly;
         comment = builder.comment;
         examples = builder.examples;
+        deprecated = builder.deprecated;
 
         contentEncoding = builder.contentEncoding;
         contentMediaType = builder.contentMediaType;
@@ -172,6 +175,10 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
 
     public Optional<Collection<String>> getEnumValues() {
         return Optional.ofNullable(enumValues);
+    }
+
+    public Optional<Collection<Integer>> getIntEnumValues() {
+        return Optional.ofNullable(intEnumValues);
     }
 
     public Optional<Node> getConstValue() {
@@ -306,6 +313,10 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
         return Optional.ofNullable(examples);
     }
 
+    public boolean isDeprecated() {
+        return deprecated;
+    }
+
     public Optional<String> getContentEncoding() {
         return Optional.ofNullable(contentEncoding);
     }
@@ -358,6 +369,7 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
 
                 .withOptionalMember("comment", getComment().map(Node::from))
                 .withOptionalMember("examples", getExamples())
+                .withOptionalMember("deprecated", this.deprecated ? Optional.of(Node.from(true)) : Optional.empty())
                 .withOptionalMember("title", getTitle().map(Node::from))
                 .withOptionalMember("description", getDescription().map(Node::from))
                 .withOptionalMember("format", getFormat().map(Node::from))
@@ -366,22 +378,37 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
                 .withOptionalMember("contentMediaType", getContentMediaType().map(Node::from));
 
         if (!properties.isEmpty()) {
-            result.withMember("properties", properties.entrySet().stream()
-                    .collect(ObjectNode.collectStringKeys(Map.Entry::getKey, e -> e.getValue().toNode())));
+            result.withMember("properties",
+                    properties.entrySet()
+                            .stream()
+                            .collect(ObjectNode.collectStringKeys(Map.Entry::getKey, e -> e.getValue().toNode())));
         }
 
         if (!patternProperties.isEmpty()) {
-            result.withMember("patternProperties", patternProperties.entrySet().stream()
-                    .collect(ObjectNode.collectStringKeys(Map.Entry::getKey, e -> e.getValue().toNode())));
+            result.withMember("patternProperties",
+                    patternProperties.entrySet()
+                            .stream()
+                            .collect(ObjectNode.collectStringKeys(Map.Entry::getKey, e -> e.getValue().toNode())));
         }
 
         if (!required.isEmpty()) {
             result.withMember("required", required.stream().sorted().map(Node::from).collect(ArrayNode.collect()));
         }
 
-        if (!enumValues.isEmpty()) {
-            result.withOptionalMember("enum", getEnumValues()
-                    .map(v -> v.stream().map(Node::from).collect(ArrayNode.collect())));
+        if (!enumValues.isEmpty() || !intEnumValues.isEmpty()) {
+            ArrayNode.Builder builder = ArrayNode.builder();
+            if (getIntEnumValues().isPresent()) {
+                for (Integer i : getIntEnumValues().get()) {
+                    builder.withValue(i);
+                }
+            }
+
+            if (getEnumValues().isPresent()) {
+                for (String s : getEnumValues().get()) {
+                    builder.withValue(s);
+                }
+            }
+            result.withOptionalMember("enum", builder.build().asArrayNode());
         }
 
         if (!allOf.isEmpty()) {
@@ -402,6 +429,10 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
 
         if (writeOnly) {
             result.withMember("writeOnly", Node.from(true));
+        }
+
+        if (deprecated) {
+            result.withMember("deprecated", Node.from(true));
         }
 
         for (Map.Entry<String, ToNode> entry : extensions.entrySet()) {
@@ -436,8 +467,8 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
             case "properties":
                 // Grab the property name if present, and skip 2 segments.
                 return segments.length == 1
-                       ? Optional.empty()
-                       : getRecursiveSchema(getProperty(segments[1]), segments, 2);
+                        ? Optional.empty()
+                        : getRecursiveSchema(getProperty(segments[1]), segments, 2);
             case "allOf":
                 return getSchemaFromArray(allOf, segments);
             case "anyOf":
@@ -473,8 +504,8 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
         try {
             int position = segments[1].equals("-") ? schemaArray.size() - 1 : Integer.parseInt(segments[1]);
             return position > -1 && position < schemaArray.size()
-                   ? getRecursiveSchema(Optional.of(schemaArray.get(position)), segments, 2)
-                   : Optional.empty();
+                    ? getRecursiveSchema(Optional.of(schemaArray.get(position)), segments, 2)
+                    : Optional.empty();
         } catch (NumberFormatException e) {
             throw new SmithyJsonSchemaException("Invalid JSON pointer number: " + e.getMessage());
         }
@@ -486,6 +517,7 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
                 .ref(ref)
                 .type(type)
                 .enumValues(enumValues)
+                .intEnumValues(intEnumValues)
                 .constValue(constValue)
                 .defaultValue(defaultValue)
 
@@ -522,6 +554,7 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
                 .writeOnly(writeOnly)
                 .comment(comment)
                 .examples(examples)
+                .deprecated(deprecated)
 
                 .contentEncoding(contentEncoding)
                 .contentMediaType(contentMediaType);
@@ -547,13 +580,29 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
         return Objects.hash(ref, type, properties, items);
     }
 
+    public static Schema fromNode(Node node) {
+        if (node.isBooleanNode()) {
+            BooleanNode booleanNode = node.expectBooleanNode();
+            return new Schema.Builder().trivial(booleanNode.getValue()).build();
+        }
+
+        ObjectNode objectNode = node.expectObjectNode();
+        Schema.Builder builder = builder();
+        objectNode.getMembers().forEach((key, val) -> builder.applyNode(key.getValue(), val));
+
+        return builder.build();
+    }
+
     /**
      * Abstract class used to build Schema components.
      */
     public static final class Builder implements SmithyBuilder<Schema> {
+        private Boolean trivial;
+
         private String ref;
         private String type;
         private Collection<String> enumValues = ListUtils.of();
+        private Collection<Integer> intEnumValues = ListUtils.of();
         private Node constValue;
         private Node defaultValue;
 
@@ -592,6 +641,7 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
         private boolean writeOnly;
         private String comment;
         private Node examples;
+        private boolean deprecated;
 
         private String contentEncoding;
         private String contentMediaType;
@@ -603,6 +653,11 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
         @Override
         public Schema build() {
             return new Schema(this);
+        }
+
+        public Builder trivial(Boolean trivial) {
+            this.trivial = trivial;
+            return this;
         }
 
         public Builder ref(String ref) {
@@ -622,6 +677,11 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
 
         public Builder enumValues(Collection<String> enumValues) {
             this.enumValues = enumValues == null ? ListUtils.of() : enumValues;
+            return this;
+        }
+
+        public Builder intEnumValues(Collection<Integer> intEnumValues) {
+            this.intEnumValues = intEnumValues == null ? ListUtils.of() : intEnumValues;
             return this;
         }
 
@@ -829,6 +889,11 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
             return this;
         }
 
+        public Builder deprecated(boolean deprecated) {
+            this.deprecated = deprecated;
+            return this;
+        }
+
         public Builder extensions(Map<String, Node> extensions) {
             this.extensions.clear();
             this.extensions.putAll(extensions);
@@ -858,7 +923,7 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
                 case "default":
                     return this.defaultValue(null);
                 case "enum":
-                    return this.enumValues(null);
+                    return this.enumValues(null).intEnumValues(null);
                 case "multipleOf":
                     return this.multipleOf(null);
                 case "maximum":
@@ -921,10 +986,145 @@ public final class Schema implements ToNode, ToSmithyBuilder<Schema> {
                     return this.contentMediaType(null);
                 case "examples":
                     return this.examples(null);
+                case "deprecated":
+                    return this.deprecated(false);
                 default:
                     LOGGER.warning("Unknown JSON Schema config 'disable' property: " + propertyName);
                     return this;
             }
+        }
+
+        Builder applyNode(String key, Node node) {
+            switch (key) {
+                case "$ref":
+                    this.ref(node.expectStringNode().getValue());
+                    break;
+                case "type":
+                    this.type(node.expectStringNode().getValue());
+                    break;
+                case "enum":
+                    this.enumValues(node.expectArrayNode().getElementsAs(StringNode::getValue));
+                    break;
+                case "intEnum":
+                    this.intEnumValues(
+                            node.expectArrayNode().getElementsAs((e) -> e.expectNumberNode().getValue().intValue()));
+                    break;
+                case "const":
+                    this.constValue(node);
+                    break;
+                case "default":
+                    this.defaultValue(node);
+                    break;
+                case "multipleOf":
+                    this.multipleOf(node.expectNumberNode().getValue());
+                    break;
+                case "maximum":
+                    this.maximum(node.expectNumberNode().getValue());
+                    break;
+                case "exclusiveMaximum":
+                    this.exclusiveMaximum(node.expectNumberNode().getValue());
+                    break;
+                case "minimum":
+                    this.minimum(node.expectNumberNode().getValue());
+                    break;
+                case "exclusiveMinimum":
+                    this.exclusiveMinimum(node.expectNumberNode().getValue());
+                    break;
+                case "maxLength":
+                    this.maxLength(node.expectNumberNode().getValue().longValue());
+                    break;
+                case "minLength":
+                    this.minLength(node.expectNumberNode().getValue().longValue());
+                    break;
+                case "pattern":
+                    this.pattern(node.expectStringNode().getValue());
+                    break;
+                case "items":
+                    this.items(Schema.fromNode(node));
+                    break;
+                case "maxItems":
+                    this.maxItems(node.expectNumberNode().getValue().intValue());
+                    break;
+                case "minItems":
+                    this.minItems(node.expectNumberNode().getValue().intValue());
+                    break;
+                case "uniqueItems":
+                    this.uniqueItems(node.expectBooleanNode().getValue());
+                    break;
+                case "maxProperties":
+                    this.maxProperties(node.expectNumberNode().getValue().intValue());
+                    break;
+                case "minProperties":
+                    this.minProperties(node.expectNumberNode().getValue().intValue());
+                    break;
+                case "required":
+                    this.required(node.expectArrayNode().getElementsAs(StringNode::getValue));
+                    break;
+                case "properties":
+                    node.expectObjectNode()
+                            .getMembers()
+                            .forEach((k, v) -> this.putProperty(k.getValue(), Schema.fromNode(v)));
+                    break;
+                case "additionalProperties":
+                    this.additionalProperties(Schema.fromNode(node));
+                    break;
+                case "propertyNames":
+                    this.propertyNames(Schema.fromNode(node));
+                    break;
+                case "patternProperties":
+                    node.expectObjectNode()
+                            .getMembers()
+                            .forEach((k, v) -> this.putPatternProperty(k.getValue(), Schema.fromNode(v)));
+                    break;
+                case "allOf":
+                    this.allOf(node.expectArrayNode().getElementsAs(Schema::fromNode));
+                    break;
+                case "anyOf":
+                    this.anyOf(node.expectArrayNode().getElementsAs(Schema::fromNode));
+                    break;
+                case "oneOf":
+                    this.oneOf(node.expectArrayNode().getElementsAs(Schema::fromNode));
+                    break;
+                case "not":
+                    this.not(Schema.fromNode(node));
+                    break;
+                case "title":
+                    this.title(node.expectStringNode().getValue());
+                    break;
+                case "description":
+                    this.description(node.expectStringNode().getValue());
+                    break;
+                case "format":
+                    this.format(node.expectStringNode().getValue());
+                    break;
+                case "readOnly":
+                    this.readOnly(node.expectBooleanNode().getValue());
+                    break;
+                case "writeOnly":
+                    this.writeOnly(node.expectBooleanNode().getValue());
+                    break;
+                case "comment":
+                    this.comment(node.expectStringNode().getValue());
+                    break;
+                case "examples":
+                    this.examples(node);
+                    break;
+                case "deprecated":
+                    this.deprecated(node.expectBooleanNode().getValue());
+                    break;
+                case "contentEncoding":
+                    this.contentEncoding(node.expectStringNode().getValue());
+                    break;
+                case "contentMediaType":
+                    this.contentMediaType(node.expectStringNode().getValue());
+                    break;
+                default:
+                    LOGGER.fine("Unknown property will be added to extensions: " + key);
+                    this.putExtension(key, node);
+                    break;
+            }
+
+            return this;
         }
     }
 }

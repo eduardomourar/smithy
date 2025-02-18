@@ -1,18 +1,7 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.diff.evaluators;
 
 import static software.amazon.smithy.diff.evaluators.ChangedShapeType.expectedStringToEnumChange;
@@ -23,10 +12,12 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import software.amazon.smithy.diff.ChangedShape;
 import software.amazon.smithy.diff.Differences;
+import software.amazon.smithy.model.SourceLocation;
 import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.traits.EnumDefinition;
 import software.amazon.smithy.model.traits.EnumTrait;
 import software.amazon.smithy.model.traits.synthetic.SyntheticEnumTrait;
+import software.amazon.smithy.model.validation.Severity;
 import software.amazon.smithy.model.validation.ValidationEvent;
 import software.amazon.smithy.utils.OptionalUtils;
 import software.amazon.smithy.utils.Pair;
@@ -38,6 +29,11 @@ import software.amazon.smithy.utils.Pair;
  * list of existing values.
  */
 public final class ChangedEnumTrait extends AbstractDiffEvaluator {
+    private static final String ORDER_CHANGED = ".OrderChanged.";
+    private static final String NAME_CHANGED = ".NameChanged.";
+    private static final String REMOVED = ".Removed.";
+    private static final String APPENDED = ".Appended.";
+
     @Override
     public List<ValidationEvent> evaluate(Differences differences) {
         return differences.changedShapes()
@@ -68,23 +64,38 @@ public final class ChangedEnumTrait extends AbstractDiffEvaluator {
         List<ValidationEvent> events = new ArrayList<>();
         int oldEndPosition = oldTrait.getValues().size() - 1;
 
-        for (EnumDefinition definition : oldTrait.getValues()) {
-            Optional<EnumDefinition> maybeNewValue = newTrait.getValues().stream()
+        for (int enumIndex = 0; enumIndex < oldTrait.getValues().size(); enumIndex++) {
+            EnumDefinition definition = oldTrait.getValues().get(enumIndex);
+            Optional<EnumDefinition> maybeNewValue = newTrait.getValues()
+                    .stream()
                     .filter(d -> d.getValue().equals(definition.getValue()))
                     .findFirst();
 
             if (!maybeNewValue.isPresent()) {
-                events.add(error(change.getNewShape(), String.format(
-                        "Enum value `%s` was removed", definition.getValue())));
+                events.add(
+                        ValidationEvent.builder()
+                                .severity(Severity.ERROR)
+                                .message(String.format("Enum value `%s` was removed", definition.getValue()))
+                                .shape(change.getNewShape())
+                                .sourceLocation(oldTrait.getSourceLocation())
+                                .id(getEventId() + REMOVED + enumIndex)
+                                .build());
                 oldEndPosition--;
             } else {
                 EnumDefinition newValue = maybeNewValue.get();
                 if (!newValue.getName().equals(definition.getName())) {
-                    events.add(error(change.getNewShape(), String.format(
-                            "Enum `name` changed from `%s` to `%s` for the `%s` value",
-                            definition.getName().orElse(null),
-                            newValue.getName().orElse(null),
-                            definition.getValue())));
+                    events.add(
+                            ValidationEvent.builder()
+                                    .severity(Severity.ERROR)
+                                    .message(String.format(
+                                            "Enum `name` changed from `%s` to `%s` for the `%s` value",
+                                            definition.getName().orElse(null),
+                                            newValue.getName().orElse(null),
+                                            definition.getValue()))
+                                    .shape(change.getNewShape())
+                                    .sourceLocation(change.getNewShape().getSourceLocation())
+                                    .id(getEventId() + NAME_CHANGED + enumIndex)
+                                    .build());
                 }
             }
         }
@@ -93,13 +104,34 @@ public final class ChangedEnumTrait extends AbstractDiffEvaluator {
         for (EnumDefinition definition : newTrait.getValues()) {
             if (!oldTrait.getEnumDefinitionValues().contains(definition.getValue())) {
                 if (newPosition <= oldEndPosition) {
-                    events.add(error(change.getNewShape(), String.format(
-                            "Enum value `%s` was inserted before the end of the list of existing values. This can "
-                                    + "cause compatibility issues when ordinal values are used for iteration, "
-                                    + "serialization, etc.", definition.getValue())));
+                    events.add(
+                            ValidationEvent.builder()
+                                    .severity(Severity.ERROR)
+                                    .message(String.format(
+                                            "Enum value `%s` was inserted before the end of the list of existing values. This "
+                                                    + "can cause compatibility issues when ordinal values are used for "
+                                                    + "iteration, serialization, etc.",
+                                            definition.getValue()))
+                                    .shape(change.getNewShape())
+                                    .sourceLocation(oldTrait.getSourceLocation())
+                                    .id(getEventId() + ORDER_CHANGED + newPosition)
+                                    .build());
+                    oldEndPosition++;
                 } else {
-                    events.add(note(change.getNewShape(), String.format(
-                            "Enum value `%s` was appended", definition.getValue())));
+                    SourceLocation appendedSource = newTrait.getSourceLocation();
+                    // If the new trait is synthetic, its source will always be N/A.
+                    // Fall back to the shape's location.
+                    if (newTrait.isSynthetic()) {
+                        appendedSource = change.getNewShape().getSourceLocation();
+                    }
+                    events.add(
+                            ValidationEvent.builder()
+                                    .severity(Severity.NOTE)
+                                    .message(String.format("Enum value `%s` was appended", definition.getValue()))
+                                    .shape(change.getNewShape())
+                                    .sourceLocation(appendedSource)
+                                    .id(getEventId() + APPENDED + newPosition)
+                                    .build());
                 }
             }
 

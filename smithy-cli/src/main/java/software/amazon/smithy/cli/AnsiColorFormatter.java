@@ -1,18 +1,7 @@
 /*
- * Copyright 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.cli;
 
 import java.io.IOException;
@@ -29,18 +18,15 @@ public enum AnsiColorFormatter implements ColorFormatter {
      */
     NO_COLOR {
         @Override
-        public String style(String text, Style... styles) {
-            return text;
+        public boolean isColorEnabled() {
+            return false;
         }
 
         @Override
-        public void style(Appendable appendable, String text, Style... styles) {
-            try {
-                appendable.append(text);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        }
+        public void startStyle(Appendable appendable, Style... style) {}
+
+        @Override
+        public void endStyle(Appendable appendable) {}
     },
 
     /**
@@ -48,18 +34,14 @@ public enum AnsiColorFormatter implements ColorFormatter {
      */
     FORCE_COLOR {
         @Override
-        public String style(String text, Style... styles) {
-            StringBuilder builder = new StringBuilder();
-            style(builder, text, styles);
-            return builder.toString();
+        public boolean isColorEnabled() {
+            return true;
         }
 
         @Override
-        public void style(Appendable appendable, String text, Style... styles) {
-            try {
-                if (styles.length == 0) {
-                    appendable.append(text);
-                } else {
+        public void startStyle(Appendable appendable, Style... styles) {
+            if (styles.length > 0) {
+                try {
                     appendable.append("\033[");
                     boolean isAfterFirst = false;
                     for (Style style : styles) {
@@ -70,11 +52,18 @@ public enum AnsiColorFormatter implements ColorFormatter {
                         isAfterFirst = true;
                     }
                     appendable.append('m');
-                    appendable.append(text);
-                    appendable.append("\033[0m");
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
                 }
+            }
+        }
+
+        @Override
+        public void endStyle(Appendable appendable) {
+            try {
+                appendable.append("\033[0m");
             } catch (IOException e) {
-                throw new CliError("Error writing output", 2, e);
+                throw new UncheckedIOException(e);
             }
         }
     },
@@ -91,8 +80,28 @@ public enum AnsiColorFormatter implements ColorFormatter {
         }
 
         @Override
+        public void println(Appendable appendable, String text, Style... styles) {
+            delegate.println(appendable, text, styles);
+        }
+
+        @Override
         public void style(Appendable appendable, String text, Style... styles) {
             delegate.style(appendable, text, styles);
+        }
+
+        @Override
+        public boolean isColorEnabled() {
+            return delegate.isColorEnabled();
+        }
+
+        @Override
+        public void startStyle(Appendable appendable, Style... style) {
+            delegate.startStyle(appendable, style);
+        }
+
+        @Override
+        public void endStyle(Appendable appendable) {
+            delegate.endStyle(appendable);
         }
     };
 

@@ -1,3 +1,7 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 package software.amazon.smithy.diff;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -11,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.model.shapes.StringShape;
+import software.amazon.smithy.model.shapes.StructureShape;
 import software.amazon.smithy.model.traits.SensitiveTrait;
 import software.amazon.smithy.model.validation.Severity;
 import software.amazon.smithy.model.validation.ValidatedResult;
@@ -77,7 +82,7 @@ public class ModelDiffTest {
     @Test
     public void findsBreakingChanges() {
         Model oldModel = Model.builder()
-                .addShape(StringShape.builder().id("smithy.example#Str").build())
+                .addShape(StructureShape.builder().id("smithy.example#Str").build())
                 .build();
         Model newModel = Model.builder().build();
         ModelDiff.Result result = ModelDiff.builder().oldModel(oldModel).newModel(newModel).compare();
@@ -93,5 +98,34 @@ public class ModelDiffTest {
         ModelDiff.Result result = ModelDiff.builder().oldModel(model).newModel(model).compare();
 
         assertThat(result.isDiffBreaking(), is(false));
+    }
+
+    @Test
+    public void appliesSuppressionsToDiff() {
+        Model oldModel = Model.assembler()
+                .addImport(getClass().getResource("suppressions-a.smithy"))
+                .assemble()
+                .unwrap();
+        Model newModel = Model.assembler()
+                .addImport(getClass().getResource("suppressions-b.smithy"))
+                .assemble()
+                .unwrap();
+
+        ModelDiff.Result result = ModelDiff.builder()
+                .oldModel(oldModel)
+                .newModel(newModel)
+                .compare();
+
+        assertThat(result.isDiffBreaking(), is(false));
+
+        boolean found = false;
+        for (ValidationEvent event : result.getDiffEvents()) {
+            if (event.getId().equals("ChangedMemberOrder")) {
+                assertThat(event.getSeverity(), equalTo(Severity.SUPPRESSED));
+                found = true;
+            }
+        }
+
+        assertThat(found, is(true));
     }
 }

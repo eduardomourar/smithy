@@ -1,22 +1,12 @@
 /*
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License").
- * You may not use this file except in compliance with the License.
- * A copy of the License is located at
- *
- *  http://aws.amazon.com/apache2.0
- *
- * or in the "license" file accompanying this file. This file is distributed
- * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing
- * permissions and limitations under the License.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 package software.amazon.smithy.jsonschema;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
 
@@ -25,6 +15,8 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import software.amazon.smithy.model.node.ArrayNode;
+import software.amazon.smithy.model.node.Node;
 import software.amazon.smithy.utils.ListUtils;
 import software.amazon.smithy.utils.SetUtils;
 
@@ -70,8 +62,7 @@ public class SchemaTest {
                 "comment",
                 "contentEncoding",
                 "contentMediaType",
-                "examples"
-        );
+                "examples");
 
         for (String value : values) {
             builder.disableProperty(value);
@@ -206,5 +197,20 @@ public class SchemaTest {
 
         assertThat(schema.getProperties().keySet(), contains("bar"));
         assertThat(schema.getRequired(), contains("bar"));
+    }
+
+    @Test
+    public void mergesEnumValuesWhenConvertingToNode() {
+        Schema schema = Schema.builder()
+                .enumValues(ListUtils.of("foo", "bar"))
+                .intEnumValues(ListUtils.of(1, 2))
+                .build();
+        ArrayNode node = schema.toNode().asObjectNode().get().expectArrayMember("enum");
+        assertThat(node.getElements(),
+                containsInAnyOrder(
+                        Node.from("foo"),
+                        Node.from("bar"),
+                        Node.from(1),
+                        Node.from(2)));
     }
 }

@@ -3,11 +3,14 @@ $version: "2.0"
 namespace smithy.example
 
 use aws.cloudformation#cfnResource
+use aws.iam#iamAction
 
 service TestService {
     version: "2020-07-02",
     resources: [
         FooResource,
+        BarResource
+        BazResource
     ],
 }
 
@@ -56,6 +59,7 @@ structure CreateFooResponse {
 }
 
 @readonly
+@iamAction(requiredActions: ["otherservice:DescribeThing"])
 operation GetFooOperation {
     input: GetFooRequest,
     output: GetFooResponse,
@@ -112,4 +116,51 @@ string FooId
 structure ComplexProperty {
     property: String,
     another: String,
+}
+
+/// The Bar resource is cooler.
+@externalDocumentation(
+    "Documentation Url": "https://docs.example.com",
+    "Source Url": "https://source.example.com",
+    "Main": "https://docs2.example.com",
+    "Code": "https://source2.example.com",
+)
+@cfnResource
+resource BarResource {
+    identifiers: {
+        barId: String
+    }
+    put: CreateBar
+}
+
+@idempotent
+operation CreateBar {
+    input := for BarResource {
+        @required
+        $barId
+    }
+}
+
+/// The Baz resource is irreplaceable.
+@externalDocumentation(
+    "Documentation Url": "https://docs.example.com",
+    "Source Url": "https://source.example.com",
+    "Main": "https://docs2.example.com",
+    "Code": "https://source2.example.com",
+)
+@cfnResource
+@noReplace
+resource BazResource {
+    identifiers: {
+        bazId: String
+    }
+    put: CreateBaz
+}
+
+@idempotent
+operation CreateBaz {
+    input := for BazResource {
+        @required
+        $bazId
+    }
 }
